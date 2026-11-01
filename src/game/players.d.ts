@@ -23,5 +23,7 @@ export declare function eventPlayer(): Player;
 export declare function playerControl(player: Player): PlayerControl;
 export declare function playerSlotState(player: Player): PlayerSlotState;
 export declare function playerName(player: Player): string;
+/** @local */
+export declare function connectionRoundTripMs(player: Player): number;
 export declare function setPlayerColor(player: Player, color: number): void;
 export declare function addLeaveEvent(events: Events, player: Player): void;

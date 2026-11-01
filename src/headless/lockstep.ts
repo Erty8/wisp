@@ -75,6 +75,7 @@ export interface LockstepLink {
   readonly delay: number;
   sent(this: void, frame: number, event: LinkEvent): void;
   due(this: void, frame: number): readonly LinkEvent[];
+  roundTripMs?(this: void, slot: number): number;
 }
 
 interface InFlight {
@@ -129,6 +130,7 @@ export class Lockstep {
         ...(options.intentionalNoops === undefined ? {} : { intentionalNoops: options.intentionalNoops }),
         standaloneProfile: options.standaloneProfile,
         network: this.network,
+        roundTripMs: (player: number) => player === slot ? -1 : options.link?.roundTripMs?.(player) ?? -1,
 
         screen: options.screen ?? { width: 1920 + 640 * index, height: 1080 },
         ...(options.scope === undefined ? {} : { scope: options.scope }),

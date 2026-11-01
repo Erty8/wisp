@@ -5,6 +5,8 @@ declares (wisp:docs/architecture.md, "Where things live").
 
 ## Unreleased
 
+- `wisp/game/players` adds the local read `connectionRoundTripMs(player: Player): number`, this client's smoothed round trip to that player in whole ms as the transport measures it, or -1 for its own player, computers, offline matches and the Warcraft backend. `LockstepLink` gains an optional `roundTripMs(slot)`, which `TurnLedger` implements, and `ClientOptions` an optional `roundTripMs`. The transport's `pong` message now names the pinger's slot (`to`).
+
 ## 0.1
 
 - The families' handle and enumeration types are opaque (`Opaque<"Name">` in `wisp/src/game/opaque`), so a Warcraft handle no longer passes as a `Player`, `Frame`, `Effect` or the like. The enumerations have constants (`EffectAnimation`, `FramePoint`, `FrameEvent`, `TextAlignment`, `OriginFrame`, `CameraField`, `FilterBlendMode`, `FilterTexMapFlags`, `VolumeGroup`, `PlayerControl`, `PlayerSlotState`, `MouseButton`, `GameSpeed`), which `plugins/game-api.ts` lowers to the Warcraft global read and the native backend gives as values. `wisp/game/frames` re-exports `Events` from `wisp/game/events`.

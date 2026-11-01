@@ -1,4 +1,5 @@
 import type { LinkEvent, LockstepLink } from "./lockstep";
+import { RoundTrips } from "./roundTrips";
 
 export interface Turn {
   readonly frame: number;
@@ -48,9 +49,11 @@ export class TurnLedger implements LockstepLink {
   private readonly outgoing = new Map<number, { at: number; events: LinkEvent[] }>();
   private readonly localChecks: [number, string][] = [];
 
-  constructor(readonly local: number, readonly remotes: readonly number[], private readonly clock: (this: void) => number) {
+  constructor(readonly local: number, readonly remotes: readonly number[], private readonly clock: (this: void) => number, readonly roundTrips: RoundTrips = new RoundTrips(clock)) {
     this.peers = remotes.map((slot) => new Remote(slot));
   }
+
+  readonly roundTripMs = (slot: number): number => this.peer(slot) === undefined ? -1 : this.roundTrips.roundTripMs(slot);
 
   /** The last frame every peer has promised complete. */
   get remoteFrontier(): number {
