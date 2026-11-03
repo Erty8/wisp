@@ -1,5 +1,5 @@
 import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, utimesSync, writeFileSync, writeSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { Console, Context, Effect, Layer, Schema } from "effect";
 import { payloadKey } from "../../src/runtime/gameFiles";
@@ -205,7 +205,8 @@ const writeHeader = (map: string, header: Uint8Array) => tryMapSync("write map h
 
 const buildTypescriptMap = (project: BuildProject, options: BuildOptions, compile: Effect.Effect<CompiledBundle, BuildFailure>) => Effect.scoped(Effect.gen(function*() {
   const out = resolve(options.out);
-  if (!relative(project.projectRoot, out).startsWith("..")) {
+  const fromRoot = relative(project.projectRoot, out);
+  if (!fromRoot.startsWith("..") && !isAbsolute(fromRoot)) {
     return yield* new MapBuildFailure({ operation: "check output", path: out, cause: "maps contain private assets and must be built outside the checkout" });
   }
   const packager = options.packager ?? project.packager;
