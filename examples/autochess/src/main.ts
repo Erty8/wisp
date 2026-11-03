@@ -1,18 +1,21 @@
-// The autochess map's entry. Each player gets a board: buy units from the
-// shop dialog and move them from the bench onto the south half of the board.
-// When the fight starts they snap to the board's squares and computer-played
-// copies fight on their own, with their traits' bonuses, against the round's
-// creeps or a copy of another player's board; afterwards the units are back
-// on their squares. Three copies of a unit merge into a stronger one; walking
-// a unit onto the circle of power sells it. The map's main() calls start()
-// once; every hot reload calls the new bundle's install().
+// The autochess map's entry. Each player gets a board and a shop panel that
+// shows its offers with live portraits; the game keeps running while it is
+// open. Units move like chess pieces: right-click a square of your half, a
+// bench slot or another of your units, and the unit jumps there (swapping
+// with the unit already there); right-click the circle of power to sell it.
+// When the fight starts computer-played copies fight on their own, with their
+// traits' bonuses, against the round's creeps or a copy of another player's
+// board; the camera goes to your board and the result stays up for a few
+// seconds before your units are back on their squares. Three copies of a
+// unit merge into a stronger one. The map's main() calls start() once; every
+// hot reload calls the new bundle's install().
 import { configureRuntime } from "wisp/src/runtime/config";
 import { installDispatch, on, trampoline } from "wisp/src/map/dispatch";
 import { installHotReload, startHotReload } from "wisp/src/map/hotReload";
 import { f32 } from "wisp/src/sim/f32";
 import { floorDiv, floorMod } from "wisp/src/sim/intMath";
 import {
-  type ActiveTrait, type Bonus, type Square, BENCH_SIZE, LAST_ROUND, MAX_LEVEL, REROLL_COST, START_GOLD, START_HEALTH, START_LEVEL,
+  type ActiveTrait, type Bonus, type Square, BENCH_SIZE, LAST_ROUND, MAX_LEVEL, REROLL_COST, SHOP_SIZE, START_GOLD, START_HEALTH, START_LEVEL,
   activeTraits, assignSquares, bonusFor, damageFor, drawFrom, findMerge, income, isCreepRound, kindAt, levelCost, nextSeed,
   raised, rollShop, sellValue, starred, traitLines, waveFor,
 } from "./rules";
@@ -31,8 +34,16 @@ const PROXY_BASE = 4;
 const PREP_SECONDS = 30;
 const PREP_TICKS = 4 * PREP_SECONDS;
 const COMBAT_TICKS = 240;
+/** How long a fight's result stays on the board before the next round. */
+const AFTERMATH_TICKS = 12;
 
-type Action = { readonly kind: "buy"; readonly slot: number } | { readonly kind: "reroll" | "level" | "close" };
+/** Screen units (the 0.8 by 0.6 frame space) from thousandths. */
+const ui = (thousandths: number) => f32(thousandths / 1000);
+/** The shop panel's top-left corner, slot size and the portrait model's scale: a portrait model is in world units. */
+const PANEL_LEFT = 120, PANEL_TOP = 550, SLOT_WIDTH = 90, SLOT_HEIGHT = 140, MARGIN = 10, SIDE_WIDTH = 100;
+const PORTRAIT_SCALE = f32(0.0005);
+
+type Action = { readonly kind: "buy"; readonly slot: number } | { readonly kind: "reroll" | "level" | "hide" };
 
 interface Owned {
   unit: unit;
@@ -46,36 +57,64 @@ interface Placed {
   readonly square: Square;
 }
 
+interface SlotFrames {
+  readonly button: framehandle;
+  readonly icon: framehandle;
+  readonly portrait: framehandle;
+  readonly label: framehandle;
+}
+
+interface ShopFrames {
+  readonly root: framehandle;
+  readonly slots: readonly SlotFrames[];
+  readonly info: framehandle;
+  readonly reroll: framehandle;
+  readonly level: framehandle;
+}
+
 interface Seat {
   readonly id: number;
   /** The board's southwest corner. */
   readonly x0: number;
   readonly y0: number;
-  readonly dialog: dialog;
   gold: number;
   health: number;
   level: number;
   alive: boolean;
   offers: (number | undefined)[];
   pieces: Owned[];
-  actions: Map<number, Action>;
   placed: Placed[];
   army: unit[];
   foes: unit[];
   /** Who the foes are: "the creeps" or the opponent's board. */
   foeName: string;
   resolved: boolean;
+  shop: ShopFrames | undefined;
+  shopOpen: boolean;
+}
+
+interface Move {
+  readonly unit: unit;
+  readonly x: number;
+  readonly y: number;
 }
 
 /** Match state lives in a global, so a reloaded bundle continues it. */
 interface ChessState {
   round: number;
-  phase: "prep" | "combat" | "over";
+  phase: "prep" | "combat" | "aftermath" | "over";
   ticks: number;
   /** The match's random sequence (rules.ts nextSeed), the same in every client. */
   seed: number;
   readonly seats: Seat[];
   scoreboard: multiboard | undefined;
+  /** Shop buttons by frame handle id. */
+  readonly buttons: Map<number, { readonly seat: number; readonly action: Action }>;
+  /** Piece orders waiting for the zero-second timer: Warcraft finishes an order event before another order sticks. */
+  moves: Move[];
+  readonly moveTimer: timer;
+  /** Fires on every shop button click. */
+  readonly clicks: trigger;
 }
 
 declare global {
@@ -96,9 +135,11 @@ const random = (low: number, high: number) => {
   return drawFrom(chess.seed, low, high);
 };
 const dead = (target: unit) => IsUnitType(target, UNIT_TYPE_DEAD);
+const isLocal = (seat: Seat) => GetPlayerId(GetLocalPlayer()) === seat.id;
 const armyOwner = (seat: Seat) => Player(PROXY_BASE + 2 * seat.id);
 const foeOwner = (seat: Seat) => Player(PROXY_BASE + 2 * seat.id + 1);
 const nameOf = (seat: Seat) => GetPlayerName(Player(seat.id));
+const seatOf = (who: player) => state().seats.find((seat) => seat.id === GetPlayerId(who));
 
 /** The center of board square (`column`, `row`), rows counted from the south edge, 0 to 7. */
 const squareX = (seat: Seat, column: number) => seat.x0 + column * CELL + 96;
@@ -113,13 +154,18 @@ const onOwnHalf = (seat: Seat, target: unit) => {
 const near = (target: unit, x: number, y: number, reach: number) =>
   Math.abs(GetUnitX(target) - x) <= reach && Math.abs(GetUnitY(target) - y) <= reach;
 
-/** The square under a unit on its own half. */
-function squareUnder(seat: Seat, target: unit): Square {
-  const x = GetUnitX(target), y = GetUnitY(target);
+/** The column under `x` and the row of the own half under `y`, clamped to the board. */
+function squareAt(seat: Seat, x: number, y: number): Square {
   let column = 0, row = 0;
   while (column < 7 && x >= seat.x0 + (column + 1) * CELL) column++;
   while (row < 3 && y >= seat.y0 + (row + 1) * CELL) row++;
   return { column, row };
+}
+
+/** Moves a unit to a point at once, ignoring pathing, so pieces land exactly on their squares. */
+function jump(target: unit, x: number, y: number): void {
+  SetUnitX(target, x);
+  SetUnitY(target, y);
 }
 
 function applyStar(target: unit, star: number): void {
@@ -146,6 +192,7 @@ function applyBonus(target: unit, bonus: Bonus): void {
 function spawnPiece(seat: Seat, kind: number, star: number, x: number, y: number): unit {
   const piece = CreateUnit(Player(seat.id), kindAt(kind).id, x, y, 90.0);
   applyStar(piece, star);
+  jump(piece, x, y);
   return piece;
 }
 
@@ -188,21 +235,86 @@ function mergeAll(seat: Seat): void {
   }
 }
 
-function showShop(seat: Seat): void {
-  const round = state().round;
-  DialogClear(seat.dialog);
-  DialogSetMessage(seat.dialog, `Round ${round}  |  Gold ${seat.gold}  |  Level ${seat.level}  |  Health ${seat.health}`);
-  seat.actions = new Map();
-  const add = (text: string, action: Action) => seat.actions.set(GetHandleId(DialogAddButton(seat.dialog, text, 0)), action);
-  seat.offers.forEach((offer, slot) => {
+// The shop panel: every client makes and fills every seat's panel the same
+// way, and shows only its own player's.
+
+function createButton(parent: framehandle, context: number, width: number, height: number): framehandle {
+  const button = BlzCreateFrameByType("GLUETEXTBUTTON", "AutochessButton", parent, "ScriptDialogButton", context);
+  BlzFrameSetSize(button, ui(width), ui(height));
+  return button;
+}
+
+function createText(parent: framehandle, context: number, width: number, height: number): framehandle {
+  const text = BlzCreateFrameByType("TEXT", "AutochessText", parent, "", context);
+  BlzFrameSetSize(text, ui(width), ui(height));
+  BlzFrameSetTextAlignment(text, TEXT_JUSTIFY_TOP, TEXT_JUSTIFY_CENTER);
+  BlzFrameSetEnable(text, false);
+  return text;
+}
+
+function createShop(seat: Seat): ShopFrames {
+  const chess = state();
+  const context = seat.id;
+  const width = SHOP_SIZE * SLOT_WIDTH + SIDE_WIDTH + 3 * MARGIN;
+  const root = BlzCreateFrame("EscMenuBackdrop", BlzGetOriginFrame(ORIGIN_FRAME_GAME_UI, 0), 0, context);
+  BlzFrameSetSize(root, ui(width), ui(SLOT_HEIGHT + 2 * MARGIN));
+  BlzFrameSetAbsPoint(root, FRAMEPOINT_TOPLEFT, ui(PANEL_LEFT), ui(PANEL_TOP));
+  const slots: SlotFrames[] = [];
+  for (let slot = 0; slot < SHOP_SIZE; slot++) {
+    const button = createButton(root, context, SLOT_WIDTH, SLOT_HEIGHT);
+    BlzFrameSetPoint(button, FRAMEPOINT_TOPLEFT, root, FRAMEPOINT_TOPLEFT, ui(MARGIN + slot * SLOT_WIDTH), ui(-MARGIN));
+    const icon = BlzCreateFrameByType("BACKDROP", "AutochessIcon", button, "", context);
+    BlzFrameSetSize(icon, ui(60), ui(60));
+    BlzFrameSetPoint(icon, FRAMEPOINT_TOP, button, FRAMEPOINT_TOP, 0, ui(-12));
+    BlzFrameSetEnable(icon, false);
+    // The model's origin sits at the frame's bottom-left corner; centered under the icon, its head shows over it.
+    const portrait = BlzCreateFrameByType("SPRITE", "AutochessPortrait", button, "", context);
+    BlzFrameSetSize(portrait, ui(1), ui(1));
+    BlzFrameSetPoint(portrait, FRAMEPOINT_BOTTOMLEFT, icon, FRAMEPOINT_BOTTOM, 0, 0);
+    BlzFrameSetScale(portrait, PORTRAIT_SCALE);
+    BlzFrameSetEnable(portrait, false);
+    const label = createText(button, context, SLOT_WIDTH - 8, 60);
+    BlzFrameSetPoint(label, FRAMEPOINT_TOP, icon, FRAMEPOINT_BOTTOM, 0, ui(-4));
+    BlzTriggerRegisterFrameEvent(chess.clicks, button, FRAMEEVENT_CONTROL_CLICK);
+    chess.buttons.set(GetHandleId(button), { seat: seat.id, action: { kind: "buy", slot } });
+    slots.push({ button, icon, portrait, label });
+  }
+  /** The side column's rows: the info text, then a button every 32 thousandths below a 14 gap; one ui() each, since Lua adds binary32 values in binary32. */
+  const side = (index: number) => ui(-MARGIN - index * 32 - (index > 0 ? 14 : 0));
+  const info = createText(root, context, SIDE_WIDTH, 40);
+  BlzFrameSetPoint(info, FRAMEPOINT_TOPRIGHT, root, FRAMEPOINT_TOPRIGHT, ui(-MARGIN), side(0));
+  const reroll = createButton(root, context, SIDE_WIDTH, 30);
+  BlzFrameSetPoint(reroll, FRAMEPOINT_TOPRIGHT, root, FRAMEPOINT_TOPRIGHT, ui(-MARGIN), side(1));
+  const level = createButton(root, context, SIDE_WIDTH, 30);
+  BlzFrameSetPoint(level, FRAMEPOINT_TOPRIGHT, root, FRAMEPOINT_TOPRIGHT, ui(-MARGIN), side(2));
+  const hide = createButton(root, context, SIDE_WIDTH, 30);
+  BlzFrameSetPoint(hide, FRAMEPOINT_TOPRIGHT, root, FRAMEPOINT_TOPRIGHT, ui(-MARGIN), side(3));
+  BlzFrameSetText(hide, "Hide (-shop)");
+  for (const button of [reroll, level, hide]) BlzTriggerRegisterFrameEvent(chess.clicks, button, FRAMEEVENT_CONTROL_CLICK);
+  chess.buttons.set(GetHandleId(reroll), { seat: seat.id, action: { kind: "reroll" } });
+  chess.buttons.set(GetHandleId(level), { seat: seat.id, action: { kind: "level" } });
+  chess.buttons.set(GetHandleId(hide), { seat: seat.id, action: { kind: "hide" } });
+  return { root, slots, info, reroll, level };
+}
+
+function refreshShop(seat: Seat): void {
+  const shop = seat.shop;
+  if (shop === undefined) return;
+  const chess = state();
+  BlzFrameSetVisible(shop.root, isLocal(seat) && seat.alive && seat.shopOpen && chess.phase === "prep");
+  shop.slots.forEach((frames, slot) => {
+    const offer = seat.offers[slot];
+    BlzFrameSetVisible(frames.button, offer !== undefined);
     if (offer === undefined) return;
     const kind = kindAt(offer);
-    add(`${kind.name} (${kind.cost} gold) - ${kind.race} ${kind.role}`, { kind: "buy", slot });
+    BlzFrameSetTexture(frames.icon, `ReplaceableTextures\\CommandButtons\\${kind.icon}.blp`, 0, true);
+    BlzFrameSetModel(frames.portrait, `${kind.model}_portrait.mdl`, 0);
+    BlzFrameSetText(frames.label, `${kind.name}\n${kind.cost} gold\n${kind.race}\n${kind.role}`);
   });
-  add(`Reroll (${REROLL_COST} gold)`, { kind: "reroll" });
-  if (seat.level < MAX_LEVEL) add(`Level up to ${seat.level + 1} (${levelCost(seat.level)} gold)`, { kind: "level" });
-  add("Close (type -shop to reopen)", { kind: "close" });
-  DialogDisplay(Player(seat.id), seat.dialog, true);
+  const fighting = seat.pieces.filter((owned) => onOwnHalf(seat, owned.unit)).length;
+  BlzFrameSetText(shop.info, `Gold ${seat.gold}\nBoard ${fighting}/${seat.level}`);
+  BlzFrameSetText(shop.reroll, `Reroll (${REROLL_COST})`);
+  BlzFrameSetText(shop.level, seat.level < MAX_LEVEL ? `Level ${seat.level + 1} (${levelCost(seat.level)})` : "Max level");
 }
 
 function buy(seat: Seat, slot: number): void {
@@ -215,16 +327,22 @@ function buy(seat: Seat, slot: number): void {
   seat.gold -= kind.cost;
   seat.offers[slot] = undefined;
   seat.pieces.push({ unit: spawnPiece(seat, offer, 1, squareX(seat, bench), benchY(seat)), kind: offer, star: 1 });
+  say(seat, `Bought ${kind.name} (${seat.gold} gold left).`);
   mergeAll(seat);
 }
 
 function click(): void {
   const chess = state();
-  const seat = chess.seats.find((candidate) => GetHandleId(candidate.dialog) === GetHandleId(GetClickedDialog()));
-  const action = seat?.actions.get(GetHandleId(GetClickedButton()));
-  if (seat === undefined || action === undefined || chess.phase !== "prep") return;
-  if (action.kind === "close") return;
+  const clicked = BlzGetTriggerFrame();
+  // Give the keyboard back to the game: a clicked button otherwise keeps its focus.
+  BlzFrameSetEnable(clicked, false);
+  BlzFrameSetEnable(clicked, true);
+  const entry = chess.buttons.get(GetHandleId(clicked));
+  const seat = seatOf(GetTriggerPlayer());
+  if (entry === undefined || seat === undefined || entry.seat !== seat.id || chess.phase !== "prep" || !seat.alive) return;
+  const action = entry.action;
   if (action.kind === "buy") buy(seat, action.slot);
+  if (action.kind === "hide") seat.shopOpen = false;
   if (action.kind === "reroll") {
     if (seat.gold < REROLL_COST) say(seat, `A reroll costs ${REROLL_COST} gold.`);
     else {
@@ -234,26 +352,74 @@ function click(): void {
   }
   if (action.kind === "level") {
     const cost = levelCost(seat.level);
-    if (seat.gold < cost) say(seat, `Level ${seat.level + 1} costs ${cost} gold.`);
+    if (seat.level >= MAX_LEVEL) say(seat, "You are at the highest level.");
+    else if (seat.gold < cost) say(seat, `Level ${seat.level + 1} costs ${cost} gold.`);
     else {
       seat.gold -= cost;
       seat.level++;
       say(seat, `Level ${seat.level}: up to ${seat.level} units fight.`);
     }
   }
-  showShop(seat);
+  refreshShop(seat);
 }
 
 function shopCommand(): void {
-  const seat = state().seats.find((candidate) => candidate.id === GetPlayerId(GetTriggerPlayer()));
+  const seat = seatOf(GetTriggerPlayer());
   if (seat === undefined || !seat.alive) return;
-  if (state().phase === "prep") showShop(seat);
-  else say(seat, "The shop opens after the fight.");
+  seat.shopOpen = !seat.shopOpen;
+  if (state().phase !== "prep") say(seat, "The shop opens after the fight.");
+  refreshShop(seat);
 }
 
 function traitsCommand(): void {
-  const seat = state().seats.find((candidate) => candidate.id === GetPlayerId(GetTriggerPlayer()));
+  const seat = seatOf(GetTriggerPlayer());
   if (seat !== undefined && seat.alive) sayTraits(seat, boardTraits(seat));
+}
+
+// Chess moves: an order to a point or a unit becomes a jump in the next instant.
+
+function order(): void {
+  const chess = state();
+  const target = GetOrderTargetUnit();
+  const x = target === undefined ? GetOrderPointX() : GetUnitX(target);
+  const y = target === undefined ? GetOrderPointY() : GetUnitY(target);
+  chess.moves.push({ unit: GetTriggerUnit(), x, y });
+  TimerStart(chess.moveTimer, 0, false, trampoline("chess.place"));
+}
+
+function place(): void {
+  const chess = state();
+  const moves = chess.moves;
+  chess.moves = [];
+  for (const move of moves) {
+    const seat = seatOf(GetOwningPlayer(move.unit));
+    const owned = seat?.pieces.find((piece) => piece.unit === move.unit);
+    if (seat === undefined || owned === undefined) continue;
+    movePiece(seat, owned, move.x, move.y);
+  }
+}
+
+function movePiece(seat: Seat, owned: Owned, x: number, y: number): void {
+  const fromX = GetUnitX(owned.unit), fromY = GetUnitY(owned.unit);
+  IssueImmediateOrder(owned.unit, "stop");
+  if (state().phase === "prep" && Math.abs(x - padX(seat)) <= 128 && Math.abs(y - benchY(seat)) <= 128) {
+    const value = sellValue(kindAt(owned.kind).cost, owned.star);
+    seat.gold += value;
+    RemoveUnit(owned.unit);
+    seat.pieces = seat.pieces.filter((candidate) => candidate !== owned);
+    say(seat, `Sold ${kindAt(owned.kind).name} for ${value} gold.`);
+    return refreshShop(seat);
+  }
+  const onBoard = x >= seat.x0 && x <= seat.x0 + BOARD && y >= seat.y0 && y <= seat.y0 + HALF;
+  const onBench = x >= seat.x0 && x <= seat.x0 + BOARD && Math.abs(y - benchY(seat)) <= 96;
+  // During a fight the board's units are away; pieces only move between bench slots.
+  if (!(onBench || (onBoard && state().phase === "prep"))) return jump(owned.unit, fromX, fromY);
+  const square = squareAt(seat, x, y);
+  const toX = squareX(seat, square.column), toY = onBoard ? squareY(seat, square.row) : benchY(seat);
+  const occupant = seat.pieces.find((piece) => piece !== owned && near(piece.unit, toX, toY, 64));
+  if (occupant !== undefined) jump(occupant.unit, fromX, fromY);
+  jump(owned.unit, toX, toY);
+  refreshShop(seat);
 }
 
 function startPrep(): void {
@@ -266,18 +432,9 @@ function startPrep(): void {
     if (!seat.alive) continue;
     seat.gold += chess.round === 1 ? START_GOLD : income(seat.gold);
     seat.offers = rollShop(seat.level, random);
+    seat.shopOpen = true;
     say(seat, `Round ${chess.round} against ${against}: ${PREP_SECONDS} seconds to buy and place units. Up to ${seat.level} units on the south half of your board fight.`);
-    showShop(seat);
-  }
-}
-
-function sellOnPad(seat: Seat): void {
-  for (const owned of seat.pieces.filter((candidate) => near(candidate.unit, padX(seat), benchY(seat), 128))) {
-    const value = sellValue(kindAt(owned.kind).cost, owned.star);
-    seat.gold += value;
-    RemoveUnit(owned.unit);
-    seat.pieces = seat.pieces.filter((candidate) => candidate !== owned);
-    say(seat, `Sold ${kindAt(owned.kind).name} for ${value} gold.`);
+    refreshShop(seat);
   }
 }
 
@@ -286,11 +443,11 @@ function placeUnits(seat: Seat): void {
   const onBoard = seat.pieces.filter((owned) => onOwnHalf(seat, owned.unit));
   for (const extra of onBoard.slice(seat.level)) {
     const bench = freeBenchSlot(seat);
-    if (bench !== undefined) SetUnitPosition(extra.unit, squareX(seat, bench), benchY(seat));
+    if (bench !== undefined) jump(extra.unit, squareX(seat, bench), benchY(seat));
   }
   if (onBoard.length > seat.level) say(seat, `Only ${seat.level} units fit at level ${seat.level}; the rest went back to the bench.`);
   const fighting = onBoard.slice(0, seat.level);
-  const squares = assignSquares(fighting.map((owned) => squareUnder(seat, owned.unit)));
+  const squares = assignSquares(fighting.map((owned) => squareAt(seat, GetUnitX(owned.unit), GetUnitY(owned.unit))));
   seat.placed = [];
   fighting.forEach((owned, index) => {
     const square = squares[index];
@@ -305,7 +462,7 @@ function startCombat(): void {
   chess.ticks = 0;
   const alive = chess.seats.filter((seat) => seat.alive);
   for (const seat of alive) {
-    DialogDisplay(Player(seat.id), seat.dialog, false);
+    refreshShop(seat);
     placeUnits(seat);
   }
   const creeps = isCreepRound(chess.round) || alive.length < 2;
@@ -328,20 +485,18 @@ function startCombat(): void {
     for (const fighter of seat.army) IssuePointOrder(fighter, "attack", seat.x0 + HALF, seat.y0 + 3 * QUARTER);
     for (const foe of seat.foes) IssuePointOrder(foe, "attack", seat.x0 + HALF, seat.y0 + QUARTER);
     seat.resolved = false;
+    if (isLocal(seat)) PanCameraToTimed(seat.x0 + HALF, seat.y0 + HALF, 0.5);
     sayTraits(seat, active);
     say(seat, `Fight! Your ${seat.army.length} units against ${seat.foes.length} of ${seat.foeName}.`);
   });
 }
 
+/** Scores a finished fight; its units stay on the board until the aftermath ends. */
 function resolve(seat: Seat): void {
   const chess = state();
   const survivors = seat.foes.filter((foe) => !dead(foe)).length;
   const lost = damageFor(survivors, chess.round);
   seat.health -= lost;
-  for (const fighter of [...seat.army, ...seat.foes]) RemoveUnit(fighter);
-  seat.army = [];
-  seat.foes = [];
-  for (const { owned, square } of seat.placed) owned.unit = spawnPiece(seat, owned.kind, owned.star, squareX(seat, square.column), squareY(seat, square.row));
   seat.resolved = true;
   if (lost === 0) say(seat, `Round ${chess.round} won!`);
   else say(seat, `${survivors} of ${seat.foeName} survived: you lose ${lost} health (${Math.max(seat.health, 0)} left).`);
@@ -353,12 +508,24 @@ function resolve(seat: Seat): void {
   sayAll(`${nameOf(seat)} is out after round ${chess.round}.`);
 }
 
+/** Clears the fights and puts each player's units back on their squares. */
+function clearFights(): void {
+  for (const seat of state().seats) {
+    for (const fighter of [...seat.army, ...seat.foes]) RemoveUnit(fighter);
+    seat.army = [];
+    seat.foes = [];
+    for (const { owned, square } of seat.placed) owned.unit = spawnPiece(seat, owned.kind, owned.star, squareX(seat, square.column), squareY(seat, square.row));
+    seat.placed = [];
+  }
+}
+
 function showScoreboard(): void {
   const chess = state();
   const board = chess.scoreboard;
   if (board === undefined) return;
   const left = Math.max(0, PREP_SECONDS - floorDiv(chess.ticks, 4));
-  MultiboardSetTitleText(board, chess.phase === "over" ? "Game over" : chess.phase === "prep" ? `Round ${chess.round}: fight in ${left} s` : `Round ${chess.round}: fighting`);
+  const title = chess.phase === "over" ? "Game over" : chess.phase === "prep" ? `Round ${chess.round}: fight in ${left} s` : `Round ${chess.round}: fighting`;
+  MultiboardSetTitleText(board, title);
   const cell = (row: number, column: number, text: string, width: number) => {
     const item = MultiboardGetItem(board, row, column);
     MultiboardSetItemStyle(item, true, false);
@@ -375,19 +542,20 @@ function showScoreboard(): void {
   });
 }
 
-/** The first tick, once loading is over: Warcraft doesn't draw a dialog or scoreboard made during map initialization. */
+/** The first tick, once loading is over: Warcraft doesn't draw a scoreboard made during map initialization. */
 function begin(): void {
   const chess = state();
   FogEnable(false);
   FogMaskEnable(false);
   for (const seat of chess.seats) {
-    if (GetPlayerId(GetLocalPlayer()) === seat.id) PanCameraToTimed(seat.x0 + HALF, seat.y0 + QUARTER, 0);
+    if (isLocal(seat)) PanCameraToTimed(seat.x0 + HALF, seat.y0 + QUARTER, 0);
+    seat.shop = createShop(seat);
   }
   const board = CreateMultiboard();
   MultiboardSetColumnCount(board, 4);
   MultiboardSetRowCount(board, 1 + chess.seats.length);
   chess.scoreboard = board;
-  sayAll("Autochess: buy units in the shop and move them onto the south half of your board; they fight on their own. Two different units of a race or role unlock a trait bonus (type -traits). Walk a unit onto the circle of power to sell it.");
+  sayAll("Autochess: buy units in the shop. Right-click a square to move a unit there like a chess piece, or the circle of power to sell it. Units on the south half of your board fight on their own; two different units of a race or role unlock a trait bonus (-traits).");
   startPrep();
   showScoreboard();
   MultiboardDisplay(board, true);
@@ -401,10 +569,21 @@ function tick(): void {
   chess.ticks++;
   if (floorMod(chess.ticks, 4) === 0) showScoreboard();
   if (chess.phase === "prep") {
-    for (const seat of chess.seats) if (seat.alive) sellOnPad(seat);
     if (chess.ticks === PREP_TICKS - 40) sayAll("The fight starts in 10 seconds.");
     if (chess.ticks >= PREP_TICKS) startCombat();
     return;
+  }
+  if (chess.phase === "aftermath") {
+    if (chess.ticks < AFTERMATH_TICKS) return;
+    clearFights();
+    const standing = chess.seats.filter((seat) => seat.alive);
+    if (standing.length === 0 || chess.round >= LAST_ROUND) {
+      chess.phase = "over";
+      showScoreboard();
+      sayAll(standing.length === 0 ? "Game over: nobody is left standing." : `Victory! ${standing.map((seat) => nameOf(seat)).join(" and ")} survived all ${LAST_ROUND} rounds.`);
+      return;
+    }
+    return startPrep();
   }
   for (const seat of chess.seats) {
     if (!seat.alive || seat.resolved) continue;
@@ -413,14 +592,8 @@ function tick(): void {
     if (!foesLeft || !armyLeft || chess.ticks >= COMBAT_TICKS) resolve(seat);
   }
   if (chess.seats.some((seat) => seat.alive && !seat.resolved)) return;
-  const standing = chess.seats.filter((seat) => seat.alive);
-  if (standing.length === 0 || chess.round >= LAST_ROUND) {
-    chess.phase = "over";
-    showScoreboard();
-    sayAll(standing.length === 0 ? "Game over: nobody is left standing." : `Victory! ${standing.map((seat) => nameOf(seat)).join(" and ")} survived all ${LAST_ROUND} rounds.`);
-    return;
-  }
-  startPrep();
+  chess.phase = "aftermath";
+  chess.ticks = 0;
 }
 
 export function install(this: void): void {
@@ -430,6 +603,8 @@ export function install(this: void): void {
   on("chess.click", click);
   on("chess.shop", shopCommand);
   on("chess.traits", traitsCommand);
+  on("chess.order", order);
+  on("chess.place", place);
   installHotReload();
 }
 
@@ -459,25 +634,30 @@ export function start(this: void): void {
   const clicks = CreateTrigger();
   const shop = CreateTrigger();
   const traits = CreateTrigger();
+  const orders = CreateTrigger();
+  const everyUnit = Filter(() => true);
   for (let id = 0; id < SEATS; id++) {
     const player = Player(id);
     if (GetPlayerSlotState(player) !== PLAYER_SLOT_STATE_PLAYING || GetPlayerController(player) !== MAP_CONTROL_USER) continue;
-    const seat: Seat = {
-      id, x0: centerX + (id === 0 ? -ARENA_OFFSET : ARENA_OFFSET) - HALF, y0: centerY - HALF, dialog: DialogCreate(),
+    seats.push({
+      id, x0: centerX + (id === 0 ? -ARENA_OFFSET : ARENA_OFFSET) - HALF, y0: centerY - HALF,
       gold: 0, health: START_HEALTH, level: START_LEVEL, alive: true,
-      offers: [], pieces: [], actions: new Map(), placed: [], army: [], foes: [], foeName: "the creeps", resolved: true,
-    };
-    seats.push(seat);
-    TriggerRegisterDialogEvent(clicks, seat.dialog);
+      offers: [], pieces: [], placed: [], army: [], foes: [], foeName: "the creeps", resolved: true, shop: undefined, shopOpen: true,
+    });
     TriggerRegisterPlayerChatEvent(shop, player, "-shop", true);
     TriggerRegisterPlayerChatEvent(traits, player, "-traits", true);
-    CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), CIRCLE_OF_POWER, padX(seat), benchY(seat), 270.0);
+    TriggerRegisterPlayerUnitEvent(orders, player, EVENT_PLAYER_UNIT_ISSUED_POINT_ORDER, everyUnit);
+    TriggerRegisterPlayerUnitEvent(orders, player, EVENT_PLAYER_UNIT_ISSUED_TARGET_ORDER, everyUnit);
   }
+  for (const seat of seats) CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), CIRCLE_OF_POWER, padX(seat), benchY(seat), 270.0);
   setAlliances(seats);
   TriggerAddAction(clicks, trampoline("chess.click"));
   TriggerAddAction(shop, trampoline("chess.shop"));
   TriggerAddAction(traits, trampoline("chess.traits"));
-  globalThis.__chessState = { round: 0, phase: "prep", ticks: 0, seed: 1, seats, scoreboard: undefined };
+  TriggerAddAction(orders, trampoline("chess.order"));
+  globalThis.__chessState = {
+    round: 0, phase: "prep", ticks: 0, seed: 1, seats, scoreboard: undefined, buttons: new Map(), moves: [], moveTimer: CreateTimer(), clicks,
+  };
   TimerStart(CreateTimer(), 0.25, true, trampoline("chess.tick"));
   startHotReload();
 }

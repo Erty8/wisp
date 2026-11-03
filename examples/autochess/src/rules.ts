@@ -15,23 +15,41 @@ export interface Kind {
   readonly cost: number;
   readonly race: Race;
   readonly role: Role;
+  /** The unit model path without extension; its portrait is the same path with "_portrait". */
+  readonly model: string;
+  /** Its command-button icon, ReplaceableTextures\CommandButtons\ICON.blp. */
+  readonly icon: string;
 }
 
 export const POOL: readonly Kind[] = [
-  { name: "Footman", id: 1751543663, code: "hfoo", cost: 1, race: "Human", role: "Warrior" },
-  { name: "Grunt", id: 1869050485, code: "ogru", cost: 1, race: "Orc", role: "Warrior" },
-  { name: "Ghoul", id: 1969711215, code: "ugho", cost: 1, race: "Undead", role: "Warrior" },
-  { name: "Archer", id: 1700885091, code: "earc", cost: 1, race: "Night Elf", role: "Ranger" },
-  { name: "Rifleman", id: 1752328550, code: "hrif", cost: 1, race: "Human", role: "Ranger" },
-  { name: "Headhunter", id: 1869116782, code: "ohun", cost: 2, race: "Orc", role: "Ranger" },
-  { name: "Crypt Fiend", id: 1969451641, code: "ucry", cost: 2, race: "Undead", role: "Ranger" },
-  { name: "Huntress", id: 1702061422, code: "esen", cost: 2, race: "Night Elf", role: "Ranger" },
-  { name: "Raider", id: 1869767017, code: "orai", cost: 2, race: "Orc", role: "Warrior" },
-  { name: "Mortar Team", id: 1752003693, code: "hmtm", cost: 2, race: "Human", role: "Ranger" },
-  { name: "Knight", id: 1751871081, code: "hkni", cost: 3, race: "Human", role: "Warrior" },
-  { name: "Tauren", id: 1869898101, code: "otau", cost: 3, race: "Orc", role: "Warrior" },
-  { name: "Abomination", id: 1969316463, code: "uabo", cost: 3, race: "Undead", role: "Warrior" },
-  { name: "Mountain Giant", id: 1701672039, code: "emtg", cost: 3, race: "Night Elf", role: "Warrior" },
+  { name: "Footman", id: 1751543663, code: "hfoo", cost: 1, race: "Human", role: "Warrior",
+    model: "units\\human\\Footman\\Footman", icon: "BTNFootman" },
+  { name: "Grunt", id: 1869050485, code: "ogru", cost: 1, race: "Orc", role: "Warrior",
+    model: "units\\orc\\Grunt\\Grunt", icon: "BTNGrunt" },
+  { name: "Ghoul", id: 1969711215, code: "ugho", cost: 1, race: "Undead", role: "Warrior",
+    model: "units\\undead\\Ghoul\\Ghoul", icon: "BTNGhoul" },
+  { name: "Archer", id: 1700885091, code: "earc", cost: 1, race: "Night Elf", role: "Ranger",
+    model: "units\\nightelf\\Archer\\Archer", icon: "BTNArcher" },
+  { name: "Rifleman", id: 1752328550, code: "hrif", cost: 1, race: "Human", role: "Ranger",
+    model: "units\\human\\Rifleman\\Rifleman", icon: "BTNRifleman" },
+  { name: "Headhunter", id: 1869116782, code: "ohun", cost: 2, race: "Orc", role: "Ranger",
+    model: "units\\orc\\HeadHunter\\HeadHunter", icon: "BTNHeadhunter" },
+  { name: "Crypt Fiend", id: 1969451641, code: "ucry", cost: 2, race: "Undead", role: "Ranger",
+    model: "units\\undead\\CryptFiend\\CryptFiend", icon: "BTNCryptFiend" },
+  { name: "Huntress", id: 1702061422, code: "esen", cost: 2, race: "Night Elf", role: "Ranger",
+    model: "units\\nightelf\\Huntress\\Huntress", icon: "BTNHuntress" },
+  { name: "Raider", id: 1869767017, code: "orai", cost: 2, race: "Orc", role: "Warrior",
+    model: "units\\orc\\WolfRider\\WolfRider", icon: "BTNRaider" },
+  { name: "Mortar Team", id: 1752003693, code: "hmtm", cost: 2, race: "Human", role: "Ranger",
+    model: "units\\human\\MortarTeam\\MortarTeam", icon: "BTNMortarTeam" },
+  { name: "Knight", id: 1751871081, code: "hkni", cost: 3, race: "Human", role: "Warrior",
+    model: "units\\human\\Knight\\Knight", icon: "BTNKnight" },
+  { name: "Tauren", id: 1869898101, code: "otau", cost: 3, race: "Orc", role: "Warrior",
+    model: "units\\orc\\Tauren\\Tauren", icon: "BTNTauren" },
+  { name: "Abomination", id: 1969316463, code: "uabo", cost: 3, race: "Undead", role: "Warrior",
+    model: "units\\undead\\Abomination\\Abomination", icon: "BTNAbomination" },
+  { name: "Mountain Giant", id: 1701672039, code: "emtg", cost: 3, race: "Night Elf", role: "Warrior",
+    model: "units\\nightelf\\MountainGiant\\MountainGiant", icon: "BTNMountainGiant" },
 ];
 
 /** What a trait adds to each unit that has it. `haste` 1 attacks 25% sooner, 2 attacks 37.5% sooner. */
