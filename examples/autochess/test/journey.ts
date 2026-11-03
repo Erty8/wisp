@@ -1,7 +1,12 @@
 // The autochess headless journey, declared once for Bun and 32-bit Lua:
-// round 1's shop, a -shop chat, a hot reload, the round 1 fight until its
-// timeout (headless units don't fight) and round 2's shop.
+// round 1's shop, a -shop chat, a hot reload, a -traits chat and four rounds
+// with empty boards (shop buttons need a click in Warcraft): three against
+// creeps, which cost health, then round 4 against the other player's board.
 import type { Journey } from "wisp/src/headless/journey";
+
+const SHOP = "the journey checks rounds and messages; shop buttons need a click in Warcraft";
+const LOOKS = "the journey checks rounds and messages, not what players see";
+const FIGHTS = "headless units don't fight; with empty boards each fight ends on its first tick";
 
 /** What a headless run needs to know about the map: src/main.ts's configureRuntime() prefixes. */
 export const CHESS_MAP = {
@@ -10,30 +15,24 @@ export const CHESS_MAP = {
   natives: () => ({ GetRectCenterX: () => 0, GetRectCenterY: () => 0 }),
   localNatives: { PanCameraToTimed: "moves only this player's camera, to their own board" },
   intentionalNoops: {
-    DialogCreate: "the journey checks rounds and messages; shop buttons need a click in Warcraft",
-    DialogClear: "the journey checks rounds and messages; shop buttons need a click in Warcraft",
-    DialogSetMessage: "the journey checks rounds and messages; shop buttons need a click in Warcraft",
-    DialogAddButton: "the journey checks rounds and messages; shop buttons need a click in Warcraft",
-    DialogDisplay: "the journey checks rounds and messages; shop buttons need a click in Warcraft",
-    TriggerRegisterDialogEvent: "the journey checks rounds and messages; shop buttons need a click in Warcraft",
-    PanCameraToTimed: "the journey has no camera",
-    FogEnable: "the journey checks rounds and messages, not what players see",
-    FogMaskEnable: "the journey checks rounds and messages, not what players see",
+    DialogCreate: SHOP, DialogClear: SHOP, DialogSetMessage: SHOP, DialogAddButton: SHOP, DialogDisplay: SHOP, TriggerRegisterDialogEvent: SHOP,
+    PanCameraToTimed: LOOKS, FogEnable: LOOKS, FogMaskEnable: LOOKS, SetPlayerColor: LOOKS, GetPlayerColor: LOOKS,
+    CreateMultiboard: LOOKS, MultiboardSetColumnCount: LOOKS, MultiboardSetRowCount: LOOKS, MultiboardSetTitleText: LOOKS,
+    MultiboardGetItem: LOOKS, MultiboardSetItemStyle: LOOKS, MultiboardSetItemValue: LOOKS, MultiboardSetItemWidth: LOOKS,
+    MultiboardReleaseItem: LOOKS, MultiboardDisplay: LOOKS,
     SetPlayerState: "the gold display mirrors the map's own gold, which the journey checks through messages",
-    RemoveGuardPosition: "headless creeps don't fight, so the round ends at its timeout",
-    SetUnitCreepGuard: "headless creeps don't fight, so the round ends at its timeout",
-    UnitAddSleep: "headless creeps don't fight, so the round ends at its timeout",
-    IssuePointOrder: "headless units don't fight, so the round ends at its timeout",
+    SetPlayerAlliance: FIGHTS, IssuePointOrder: FIGHTS,
     IsUnitType: "nobody dies headless: every unit reads as alive",
   },
 };
 
-/** 60 frames a second: 30 s of shopping, then the fight's 60 s timeout. */
+/** 60 frames a second; each round is 30 s of shopping and a fight that ends at once. */
 export const CHESS_JOURNEY: Journey = {
-  frames: 6000,
+  frames: 7800,
   events: [
     { frame: 60, player: 0, chat: "-shop" },
     { frame: 600, reload: true },
+    { frame: 900, player: 1, chat: "-traits" },
     { frame: 2400, player: 1, chat: "-shop" },
   ],
 };

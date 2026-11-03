@@ -1,6 +1,48 @@
 import { assertEquals, test } from "wisp/src/runtime/testing";
 import { floorDiv, floorMod } from "wisp/src/sim/intMath";
-import { BENCH_SIZE, POOL, SHOP_SIZE, damageFor, drawFrom, findMerge, income, kindAt, levelCost, nextSeed, rollShop, sellValue, shopOdds, starred, waveFor } from "./rules";
+import {
+  BENCH_SIZE, POOL, SHOP_SIZE, activeTraits, assignSquares, bonusFor, damageFor, drawFrom, findMerge, income, isCreepRound,
+  kindAt, levelCost, nextSeed, raised, rollShop, sellValue, shopOdds, starred, traitLines, waveFor,
+} from "./rules";
+
+const FOOTMAN = 0, GRUNT = 1, GHOUL = 2, ARCHER = 3, RIFLEMAN = 4, HUNTRESS = 7, MORTAR = 9, KNIGHT = 10;
+
+test("rules: traits count each kind once and unlock their tiers", () => {
+  const active = activeTraits([FOOTMAN, FOOTMAN, RIFLEMAN, ARCHER]);
+  const human = active.find(({ trait }) => trait === "Human");
+  assertEquals(human?.count, 2, "two different humans; the second footman doesn't count");
+  assertEquals(human?.tier?.text, "+3 armor", "human tier 1");
+  assertEquals(active.find(({ trait }) => trait === "Ranger")?.count, 2, "rifleman and archer are rangers");
+  assertEquals(active.find(({ trait }) => trait === "Night Elf")?.tier, undefined, "one night elf is below the first tier");
+  assertEquals(active.some(({ trait }) => trait === "Orc"), false, "no orcs");
+});
+
+test("rules: a unit adds up the bonuses of its race and role, and only those", () => {
+  const active = activeTraits([FOOTMAN, RIFLEMAN, MORTAR, KNIGHT, GRUNT, GHOUL]);
+  const knight = bonusFor(KNIGHT, active);
+  assertEquals(knight.armor, 6 + 5, "human tier 2 and warrior tier 2");
+  assertEquals(bonusFor(RIFLEMAN, active).armor, 6, "a human ranger gets the human armor only");
+  assertEquals(bonusFor(RIFLEMAN, active).damagePercent, 15, "rifleman and mortar team make ranger 2");
+  assertEquals(bonusFor(GHOUL, active).damagePercent, 0, "one undead");
+  assertEquals(bonusFor(HUNTRESS, activeTraits([HUNTRESS, ARCHER])).haste, 1, "night elf 2");
+  assertEquals(raised(500, 40), 700, "raised by 40%");
+  assertEquals(raised(33, 15), 37, "rounded down");
+});
+
+test("rules: trait lines name the reached tier and the next goal", () => {
+  assertEquals(traitLines(activeTraits([FOOTMAN, RIFLEMAN])).join(" | "), "Human 2: +3 armor (3: +6 armor) | Warrior 1 (2: +2 armor) | Ranger 1 (2: +15% damage)", "lines");
+});
+
+test("rules: units snap to their own square, or the nearest free one on the half", () => {
+  const squares = assignSquares([{ column: 3, row: 1 }, { column: 3, row: 1 }, { column: 9, row: -2 }, { column: 3, row: 1 }]);
+  assertEquals(squares.map(({ column, row }) => `${column},${row}`).join(" "), "3,1 3,0 7,0 2,1", "first keeps, then nearest free, clamped onto the half");
+  const crowd = assignSquares(Array.from({ length: 32 }, () => ({ column: 0, row: 0 })));
+  assertEquals(new Set(crowd.map(({ column, row }) => row * 8 + column)).size, 32, "32 units fill the half");
+});
+
+test("rules: rounds 1 to 3 and every fifth are creep rounds", () => {
+  assertEquals([1, 2, 3, 4, 5, 6, 9, 10, 11].map((round) => isCreepRound(round)).join(","), "true,true,true,false,true,false,false,true,false", "schedule");
+});
 
 test("rules: each rawcode is its four letters read big-endian", () => {
   for (const kind of POOL) {

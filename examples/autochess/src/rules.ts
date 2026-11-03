@@ -3,30 +3,164 @@
 // every client computes the same game and the tests run in Bun and Lua alike.
 import { floorDiv, floorMod } from "wisp/src/sim/intMath";
 
+export type Race = "Human" | "Orc" | "Undead" | "Night Elf";
+export type Role = "Warrior" | "Ranger";
+export type Trait = Race | Role;
+
 export interface Kind {
   readonly name: string;
   /** The unit's rawcode, its four letters read as a big-endian integer. */
   readonly id: number;
   readonly code: string;
   readonly cost: number;
+  readonly race: Race;
+  readonly role: Role;
 }
 
 export const POOL: readonly Kind[] = [
-  { name: "Footman", id: 1751543663, code: "hfoo", cost: 1 },
-  { name: "Grunt", id: 1869050485, code: "ogru", cost: 1 },
-  { name: "Ghoul", id: 1969711215, code: "ugho", cost: 1 },
-  { name: "Archer", id: 1700885091, code: "earc", cost: 1 },
-  { name: "Rifleman", id: 1752328550, code: "hrif", cost: 1 },
-  { name: "Headhunter", id: 1869116782, code: "ohun", cost: 2 },
-  { name: "Crypt Fiend", id: 1969451641, code: "ucry", cost: 2 },
-  { name: "Huntress", id: 1702061422, code: "esen", cost: 2 },
-  { name: "Raider", id: 1869767017, code: "orai", cost: 2 },
-  { name: "Mortar Team", id: 1752003693, code: "hmtm", cost: 2 },
-  { name: "Knight", id: 1751871081, code: "hkni", cost: 3 },
-  { name: "Tauren", id: 1869898101, code: "otau", cost: 3 },
-  { name: "Abomination", id: 1969316463, code: "uabo", cost: 3 },
-  { name: "Mountain Giant", id: 1701672039, code: "emtg", cost: 3 },
+  { name: "Footman", id: 1751543663, code: "hfoo", cost: 1, race: "Human", role: "Warrior" },
+  { name: "Grunt", id: 1869050485, code: "ogru", cost: 1, race: "Orc", role: "Warrior" },
+  { name: "Ghoul", id: 1969711215, code: "ugho", cost: 1, race: "Undead", role: "Warrior" },
+  { name: "Archer", id: 1700885091, code: "earc", cost: 1, race: "Night Elf", role: "Ranger" },
+  { name: "Rifleman", id: 1752328550, code: "hrif", cost: 1, race: "Human", role: "Ranger" },
+  { name: "Headhunter", id: 1869116782, code: "ohun", cost: 2, race: "Orc", role: "Ranger" },
+  { name: "Crypt Fiend", id: 1969451641, code: "ucry", cost: 2, race: "Undead", role: "Ranger" },
+  { name: "Huntress", id: 1702061422, code: "esen", cost: 2, race: "Night Elf", role: "Ranger" },
+  { name: "Raider", id: 1869767017, code: "orai", cost: 2, race: "Orc", role: "Warrior" },
+  { name: "Mortar Team", id: 1752003693, code: "hmtm", cost: 2, race: "Human", role: "Ranger" },
+  { name: "Knight", id: 1751871081, code: "hkni", cost: 3, race: "Human", role: "Warrior" },
+  { name: "Tauren", id: 1869898101, code: "otau", cost: 3, race: "Orc", role: "Warrior" },
+  { name: "Abomination", id: 1969316463, code: "uabo", cost: 3, race: "Undead", role: "Warrior" },
+  { name: "Mountain Giant", id: 1701672039, code: "emtg", cost: 3, race: "Night Elf", role: "Warrior" },
 ];
+
+/** What a trait adds to each unit that has it. `haste` 1 attacks 25% sooner, 2 attacks 37.5% sooner. */
+export interface Bonus {
+  readonly armor: number;
+  readonly lifePercent: number;
+  readonly damagePercent: number;
+  readonly haste: number;
+}
+
+const NO_BONUS: Bonus = { armor: 0, lifePercent: 0, damagePercent: 0, haste: 0 };
+
+interface TraitTier {
+  readonly count: number;
+  readonly text: string;
+  readonly bonus: Bonus;
+}
+
+/** Each trait's tiers, lowest first: different units with the trait on the board unlock them. */
+export const TRAITS: readonly (readonly [Trait, readonly TraitTier[]])[] = [
+  ["Human", [
+    { count: 2, text: "+3 armor", bonus: { ...NO_BONUS, armor: 3 } },
+    { count: 3, text: "+6 armor", bonus: { ...NO_BONUS, armor: 6 } },
+  ]],
+  ["Orc", [
+    { count: 2, text: "+20% life", bonus: { ...NO_BONUS, lifePercent: 20 } },
+    { count: 3, text: "+40% life", bonus: { ...NO_BONUS, lifePercent: 40 } },
+  ]],
+  ["Undead", [
+    { count: 2, text: "+20% damage", bonus: { ...NO_BONUS, damagePercent: 20 } },
+    { count: 3, text: "+45% damage", bonus: { ...NO_BONUS, damagePercent: 45 } },
+  ]],
+  ["Night Elf", [
+    { count: 2, text: "attack 25% sooner", bonus: { ...NO_BONUS, haste: 1 } },
+    { count: 3, text: "attack 37.5% sooner", bonus: { ...NO_BONUS, haste: 2 } },
+  ]],
+  ["Warrior", [
+    { count: 2, text: "+2 armor", bonus: { ...NO_BONUS, armor: 2 } },
+    { count: 4, text: "+5 armor", bonus: { ...NO_BONUS, armor: 5 } },
+  ]],
+  ["Ranger", [
+    { count: 2, text: "+15% damage", bonus: { ...NO_BONUS, damagePercent: 15 } },
+    { count: 4, text: "+35% damage", bonus: { ...NO_BONUS, damagePercent: 35 } },
+  ]],
+];
+
+export interface ActiveTrait {
+  readonly trait: Trait;
+  /** Different units with the trait. */
+  readonly count: number;
+  /** The highest tier reached, or undefined below the first. */
+  readonly tier: TraitTier | undefined;
+  readonly tiers: readonly TraitTier[];
+}
+
+/** Every trait the board's units have, counting each kind once, as autochess does. */
+export function activeTraits(kinds: readonly number[]): ActiveTrait[] {
+  const distinct = kinds.filter((kind, index) => kinds.indexOf(kind) === index);
+  const active: ActiveTrait[] = [];
+  for (const [trait, tiers] of TRAITS) {
+    const count = distinct.filter((kind) => kindAt(kind).race === trait || kindAt(kind).role === trait).length;
+    if (count === 0) continue;
+    let tier: TraitTier | undefined;
+    for (const candidate of tiers) if (count >= candidate.count) tier = candidate;
+    active.push({ trait, count, tier, tiers });
+  }
+  return active;
+}
+
+/** The sum of the reached tiers' bonuses that apply to `kind`. */
+export function bonusFor(kind: number, active: readonly ActiveTrait[]): Bonus {
+  let bonus = NO_BONUS;
+  for (const { trait, tier } of active) {
+    if (tier === undefined || (kindAt(kind).race !== trait && kindAt(kind).role !== trait)) continue;
+    bonus = {
+      armor: bonus.armor + tier.bonus.armor,
+      lifePercent: bonus.lifePercent + tier.bonus.lifePercent,
+      damagePercent: bonus.damagePercent + tier.bonus.damagePercent,
+      haste: bonus.haste + tier.bonus.haste,
+    };
+  }
+  return bonus;
+}
+
+/** One line per trait: "Human 2/3: +3 armor", or the next goal below the first tier. */
+export function traitLines(active: readonly ActiveTrait[]): string[] {
+  return active.map(({ trait, count, tier, tiers }) => {
+    const next = tiers.find((candidate) => candidate.count > count);
+    const goal = next === undefined ? "" : ` (${next.count}: ${next.text})`;
+    return `${trait} ${count}${tier === undefined ? "" : `: ${tier.text}`}${goal}`;
+  });
+}
+
+/** `value` raised by `percent` percent, rounded down. */
+export function raised(value: number, percent: number): number {
+  return floorDiv(value * (100 + percent), 100);
+}
+
+export interface Square {
+  readonly column: number;
+  /** 0 to 3 from the south edge of a player's half. */
+  readonly row: number;
+}
+
+/** A square for each requested one, in order: the request if it's on the half and free, else the nearest free square. */
+export function assignSquares(requested: readonly Square[]): Square[] {
+  const taken = new Set<number>();
+  const assigned: Square[] = [];
+  for (const want of requested) {
+    const column = Math.min(Math.max(want.column, 0), 7), row = Math.min(Math.max(want.row, 0), 3);
+    let found: Square | undefined;
+    for (let distance = 0; found === undefined && distance <= 10; distance++) {
+      for (let r = 0; r <= 3 && found === undefined; r++) {
+        for (let c = 0; c <= 7 && found === undefined; c++) {
+          if (Math.abs(c - column) + Math.abs(r - row) === distance && !taken.has(r * 8 + c)) found = { column: c, row: r };
+        }
+      }
+    }
+    if (found === undefined) break;
+    taken.add(found.row * 8 + found.column);
+    assigned.push(found);
+  }
+  return assigned;
+}
+
+/** Rounds 1 to 3 and every fifth round are against creeps; the rest against another player's board when one is left. */
+export function isCreepRound(round: number): boolean {
+  return round <= 3 || floorMod(round, 5) === 0;
+}
 
 export const kindAt = (index: number): Kind => {
   const kind = POOL[index];

@@ -21,7 +21,7 @@ function playInBun() {
   return { clients, result: runJourney(clients, CHESS_JOURNEY) };
 }
 
-test("both clients shop, take a hot reload, fight round 1 and reach round 2, with the same native calls", () => {
+test("both clients shop, take a hot reload, lose three creep rounds with empty boards and reach the first board round, with the same native calls", () => {
   const { clients, result } = playInBun();
   expect(result.divergence).toBeUndefined();
   expect(result.reloads).toEqual([]);
@@ -29,10 +29,14 @@ test("both clients shop, take a hot reload, fight round 1 and reach round 2, wit
     expect(client.errors).toEqual([]);
     expect(client.missingNatives).toEqual([]);
     const messages = client.messages.join("\n");
-    expect(messages).toContain("Round 1: 30 seconds");
-    expect(messages).toContain("Fight! 2 creeps against your 0 units.");
-    expect(messages).toContain("2 creeps survived: you lose 4 health (96 left).");
-    expect(messages).toContain("Round 2: 30 seconds");
+    expect(messages).toContain("Round 1 against creeps: 30 seconds");
+    expect(messages).toContain("Traits: none yet.");
+    expect(messages).toContain("Fight! Your 0 units against 2 of the creeps.");
+    expect(messages).toContain("2 of the creeps survived: you lose 4 health (96 left).");
+    expect(messages).toContain("3 of the creeps survived: you lose 5 health (91 left).");
+    expect(messages).toContain("3 of the creeps survived: you lose 5 health (86 left).");
+    expect(messages).toContain("Round 4 against the other player's board");
+    expect(messages).toContain("Round 4 won!");
   }
   const [first, second] = result.clients;
   expect(first?.calls).toBe(second?.calls);
