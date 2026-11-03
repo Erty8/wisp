@@ -43,7 +43,7 @@ const ui = (thousandths: number) => f32(thousandths / 1000);
 const PANEL_LEFT = 120, PANEL_TOP = 550, SLOT_WIDTH = 90, SLOT_HEIGHT = 150, MARGIN = 10, SIDE_WIDTH = 100;
 const PORTRAIT_SIZE = 72;
 /** A freely drawn portrait's starting scale in ten-thousandths and lift above the icon's bottom in thousandths. */
-const PORTRAIT = { zoom: 5, lift: 0 };
+const PORTRAIT = { zoom: 1000, lift: 4 };
 
 type Action = { readonly kind: "buy"; readonly slot: number } | { readonly kind: "reroll" | "level" | "hide" };
 
@@ -117,7 +117,7 @@ interface ChessState {
   readonly moveTimer: timer;
   /** Fires on every shop button click. */
   readonly clicks: trigger;
-  /** Set by -portrait to draw the shop portraits freely at this size and height; unset, they fill their icons. */
+  /** The shop portraits' size and height, once a -portrait command changes them from PORTRAIT. */
   portrait?: { readonly zoom: number; readonly lift: number } | undefined;
 }
 
@@ -310,7 +310,8 @@ function refreshShop(seat: Seat): void {
     if (offer === undefined) return;
     const kind = kindAt(offer);
     BlzFrameSetTexture(frames.icon, `ReplaceableTextures\\CommandButtons\\${kind.icon}.blp`, 0, true);
-    BlzFrameSetModel(frames.portrait, `${kind.model}_portrait.mdl`, 0);
+    // A side-by-side trial while the look is tuned in Warcraft: odd slots draw the unit's own model.
+    BlzFrameSetModel(frames.portrait, floorMod(slot, 2) === 1 ? `${kind.model}.mdl` : `${kind.model}_portrait.mdl`, 0);
     placePortrait(frames);
     BlzFrameSetText(frames.label, `${kind.name}\n${kind.cost} gold\n${kind.race}\n${kind.role}`);
   });
@@ -375,24 +376,19 @@ function shopCommand(): void {
 }
 
 /**
- * A slot's portrait: by default it covers the icon, so the portrait camera's picture fills it; after
- * "-portrait <zoom> <lift>" it is a dot on the icon's bottom edge, raised by lift thousandths, whose
- * model is drawn at zoom ten-thousandths of its size.
+ * A slot's portrait: a dot on the icon's bottom edge, raised by lift thousandths, whose model stands on
+ * it at zoom ten-thousandths of its size. Sized over the whole icon at scale 1, the model came out
+ * many times the screen's height, so the frame's size doesn't fit the model; only the scale does.
  */
 function placePortrait(frames: SlotFrames): void {
-  const free = state().portrait;
+  const { zoom, lift } = state().portrait ?? PORTRAIT;
   BlzFrameClearAllPoints(frames.portrait);
-  if (free === undefined) {
-    BlzFrameSetScale(frames.portrait, 1);
-    BlzFrameSetAllPoints(frames.portrait, frames.icon);
-    return;
-  }
   BlzFrameSetSize(frames.portrait, ui(1), ui(1));
-  BlzFrameSetPoint(frames.portrait, FRAMEPOINT_BOTTOMLEFT, frames.icon, FRAMEPOINT_BOTTOM, 0, ui(free.lift));
-  BlzFrameSetScale(frames.portrait, f32(free.zoom / 10000));
+  BlzFrameSetPoint(frames.portrait, FRAMEPOINT_BOTTOMLEFT, frames.icon, FRAMEPOINT_BOTTOM, 0, ui(lift));
+  BlzFrameSetScale(frames.portrait, f32(zoom / 10000));
 }
 
-/** "-portrait <zoom> <lift>" draws every shop portrait freely at that size; "-portrait" alone fits them to their icons again. */
+/** "-portrait <zoom> <lift>" redraws every shop portrait at that size and height; "-portrait" alone restores PORTRAIT. */
 function portraitCommand(): void {
   const seat = seatOf(GetTriggerPlayer());
   if (seat === undefined) return;
@@ -400,8 +396,9 @@ function portraitCommand(): void {
   const [, zoom, lift] = GetEventPlayerChatString().split(" ");
   const current = chess.portrait ?? PORTRAIT;
   chess.portrait = zoom === undefined ? undefined : { zoom: S2I(zoom), lift: lift === undefined ? current.lift : S2I(lift) };
+  const shown = chess.portrait ?? PORTRAIT;
   for (const each of chess.seats) each.shop?.slots.forEach((frames) => placePortrait(frames));
-  say(seat, chess.portrait === undefined ? "Portraits: fitted to their icons." : `Portraits: zoom ${chess.portrait.zoom}, lift ${chess.portrait.lift}.`);
+  say(seat, `Portraits: zoom ${shown.zoom}, lift ${shown.lift}.`);
 }
 
 function traitsCommand(): void {

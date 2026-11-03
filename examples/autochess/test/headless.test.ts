@@ -27,7 +27,7 @@ test("player 1 buys from the shop panel and tunes its portraits; both clients ta
   expect(result.reloads).toEqual([]);
   expect(clients.clients[0]?.messages.join("\n")).toMatch(/Bought [A-Za-z ]+ \(4 gold left\)\./);
   expect(clients.clients[0]?.messages).toContain("Portraits: zoom 8, lift -10.");
-  expect(clients.clients[0]?.messages).toContain("Portraits: fitted to their icons.");
+  expect(clients.clients[0]?.messages).toContain("Portraits: zoom 1000, lift 4.");
   for (const client of clients.clients) {
     expect(client.errors).toEqual([]);
     expect(client.missingNatives).toEqual([]);
