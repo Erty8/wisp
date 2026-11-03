@@ -39,9 +39,9 @@ const AFTERMATH_TICKS = 12;
 
 /** Screen units (the 0.8 by 0.6 frame space) from thousandths. */
 const ui = (thousandths: number) => f32(thousandths / 1000);
-/** The shop panel's top-left corner, slot size and the portrait model's scale: a portrait model is in world units. */
-const PANEL_LEFT = 120, PANEL_TOP = 550, SLOT_WIDTH = 90, SLOT_HEIGHT = 140, MARGIN = 10, SIDE_WIDTH = 100;
-const PORTRAIT_SCALE = f32(0.0005);
+/** The shop panel's top-left corner, slot size and each offer's square portrait, in thousandths. */
+const PANEL_LEFT = 120, PANEL_TOP = 550, SLOT_WIDTH = 90, SLOT_HEIGHT = 150, MARGIN = 10, SIDE_WIDTH = 100;
+const PORTRAIT_SIZE = 72;
 
 type Action = { readonly kind: "buy"; readonly slot: number } | { readonly kind: "reroll" | "level" | "hide" };
 
@@ -264,14 +264,13 @@ function createShop(seat: Seat): ShopFrames {
     const button = createButton(root, context, SLOT_WIDTH, SLOT_HEIGHT);
     BlzFrameSetPoint(button, FRAMEPOINT_TOPLEFT, root, FRAMEPOINT_TOPLEFT, ui(MARGIN + slot * SLOT_WIDTH), ui(-MARGIN));
     const icon = BlzCreateFrameByType("BACKDROP", "AutochessIcon", button, "", context);
-    BlzFrameSetSize(icon, ui(60), ui(60));
+    BlzFrameSetSize(icon, ui(PORTRAIT_SIZE), ui(PORTRAIT_SIZE));
     BlzFrameSetPoint(icon, FRAMEPOINT_TOP, button, FRAMEPOINT_TOP, 0, ui(-12));
     BlzFrameSetEnable(icon, false);
-    // The model's origin sits at the frame's bottom-left corner; centered under the icon, its head shows over it.
-    const portrait = BlzCreateFrameByType("SPRITE", "AutochessPortrait", button, "", context);
-    BlzFrameSetSize(portrait, ui(1), ui(1));
-    BlzFrameSetPoint(portrait, FRAMEPOINT_BOTTOMLEFT, icon, FRAMEPOINT_BOTTOM, 0, 0);
-    BlzFrameSetScale(portrait, PORTRAIT_SCALE);
+    // A MODEL frame films the model through its own camera 0, the portrait camera, and fits the
+    // picture to the frame, as the selected unit's portrait does; the icon behind shows if it can't.
+    const portrait = BlzCreateFrameByType("MODEL", "AutochessPortrait", button, "", context);
+    BlzFrameSetAllPoints(portrait, icon);
     BlzFrameSetEnable(portrait, false);
     const label = createText(button, context, SLOT_WIDTH - 8, 60);
     BlzFrameSetPoint(label, FRAMEPOINT_TOP, icon, FRAMEPOINT_BOTTOM, 0, ui(-4));

@@ -30,7 +30,7 @@ export const CHESS_MAP = {
   },
 };
 
-/** Inside player 1's first shop slot, which spans x 0.13 to 0.22 and y 0.40 to 0.54 of the 0.8 by 0.6 screen. */
+/** Inside player 1's first shop slot, which spans x 0.13 to 0.22 and y 0.39 to 0.54 of the 0.8 by 0.6 screen. */
 const FIRST_OFFER = { x: 0.171875, y: 0.46875 };
 
 /** 60 frames a second; each round is 30 s of shopping, a fight that ends at once and 3 s of aftermath. */
