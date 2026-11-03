@@ -42,5 +42,6 @@ export const CHESS_JOURNEY: Journey = {
     { frame: 600, reload: true },
     { frame: 900, player: 1, chat: "-traits" },
     { frame: 1000, player: 0, chat: "-portrait 8 -10" },
+    { frame: 1100, player: 0, chat: "-portrait" },
   ],
 };
