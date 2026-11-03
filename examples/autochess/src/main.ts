@@ -42,6 +42,8 @@ const ui = (thousandths: number) => f32(thousandths / 1000);
 /** The shop panel's top-left corner, slot size and each offer's square portrait, in thousandths. */
 const PANEL_LEFT = 120, PANEL_TOP = 550, SLOT_WIDTH = 90, SLOT_HEIGHT = 150, MARGIN = 10, SIDE_WIDTH = 100;
 const PORTRAIT_SIZE = 72;
+/** Portrait model scale in ten-thousandths and its lift above the icon's bottom in thousandths; -portrait changes them. */
+const PORTRAIT = { zoom: 5, lift: 0 };
 
 type Action = { readonly kind: "buy"; readonly slot: number } | { readonly kind: "reroll" | "level" | "hide" };
 
@@ -115,6 +117,8 @@ interface ChessState {
   readonly moveTimer: timer;
   /** Fires on every shop button click. */
   readonly clicks: trigger;
+  /** The shop portraits' size and height, once a -portrait command changes them from PORTRAIT. */
+  portrait?: { readonly zoom: number; readonly lift: number };
 }
 
 declare global {
@@ -267,10 +271,11 @@ function createShop(seat: Seat): ShopFrames {
     BlzFrameSetSize(icon, ui(PORTRAIT_SIZE), ui(PORTRAIT_SIZE));
     BlzFrameSetPoint(icon, FRAMEPOINT_TOP, button, FRAMEPOINT_TOP, 0, ui(-12));
     BlzFrameSetEnable(icon, false);
-    // A MODEL frame films the model through its own camera 0, the portrait camera, and fits the
-    // picture to the frame, as the selected unit's portrait does; the icon behind shows if it can't.
-    const portrait = BlzCreateFrameByType("MODEL", "AutochessPortrait", button, "", context);
-    BlzFrameSetAllPoints(portrait, icon);
+    // A SPRITE draws its model in place, with the model's origin at the frame's bottom-left corner,
+    // so the unit stands on the icon's bottom edge (placePortrait). A MODEL frame would film it through
+    // its portrait camera, but fills the whole screen with black.
+    const portrait = BlzCreateFrameByType("SPRITE", "AutochessPortrait", button, "", context);
+    BlzFrameSetSize(portrait, ui(1), ui(1));
     BlzFrameSetEnable(portrait, false);
     const label = createText(button, context, SLOT_WIDTH - 8, 60);
     BlzFrameSetPoint(label, FRAMEPOINT_TOP, icon, FRAMEPOINT_BOTTOM, 0, ui(-4));
@@ -308,6 +313,7 @@ function refreshShop(seat: Seat): void {
     const kind = kindAt(offer);
     BlzFrameSetTexture(frames.icon, `ReplaceableTextures\\CommandButtons\\${kind.icon}.blp`, 0, true);
     BlzFrameSetModel(frames.portrait, `${kind.model}_portrait.mdl`, 0);
+    placePortrait(frames);
     BlzFrameSetText(frames.label, `${kind.name}\n${kind.cost} gold\n${kind.race}\n${kind.role}`);
   });
   const fighting = seat.pieces.filter((owned) => onOwnHalf(seat, owned.unit)).length;
@@ -368,6 +374,26 @@ function shopCommand(): void {
   seat.shopOpen = !seat.shopOpen;
   if (state().phase !== "prep") say(seat, "The shop opens after the fight.");
   refreshShop(seat);
+}
+
+/** A slot's portrait model, scaled by zoom ten-thousandths and raised by lift thousandths from the icon's bottom. */
+function placePortrait(frames: SlotFrames): void {
+  const { zoom, lift } = state().portrait ?? PORTRAIT;
+  BlzFrameClearAllPoints(frames.portrait);
+  BlzFrameSetPoint(frames.portrait, FRAMEPOINT_BOTTOMLEFT, frames.icon, FRAMEPOINT_BOTTOM, 0, ui(lift));
+  BlzFrameSetScale(frames.portrait, f32(zoom / 10000));
+}
+
+/** "-portrait <zoom> <lift>" tunes every shop portrait, so a player can find the size that looks right. */
+function portraitCommand(): void {
+  const seat = seatOf(GetTriggerPlayer());
+  if (seat === undefined) return;
+  const chess = state();
+  const [, zoom, lift] = GetEventPlayerChatString().split(" ");
+  const current = chess.portrait ?? PORTRAIT;
+  chess.portrait = { zoom: zoom === undefined ? current.zoom : S2I(zoom), lift: lift === undefined ? current.lift : S2I(lift) };
+  for (const each of chess.seats) each.shop?.slots.forEach((frames) => placePortrait(frames));
+  say(seat, `Portraits: zoom ${chess.portrait.zoom}, lift ${chess.portrait.lift}.`);
 }
 
 function traitsCommand(): void {
@@ -602,6 +628,7 @@ export function install(this: void): void {
   on("chess.click", click);
   on("chess.shop", shopCommand);
   on("chess.traits", traitsCommand);
+  on("chess.portrait", portraitCommand);
   on("chess.order", order);
   on("chess.place", place);
   installHotReload();
@@ -633,6 +660,7 @@ export function start(this: void): void {
   const clicks = CreateTrigger();
   const shop = CreateTrigger();
   const traits = CreateTrigger();
+  const portrait = CreateTrigger();
   const orders = CreateTrigger();
   const everyUnit = Filter(() => true);
   for (let id = 0; id < SEATS; id++) {
@@ -645,6 +673,7 @@ export function start(this: void): void {
     });
     TriggerRegisterPlayerChatEvent(shop, player, "-shop", true);
     TriggerRegisterPlayerChatEvent(traits, player, "-traits", true);
+    TriggerRegisterPlayerChatEvent(portrait, player, "-portrait", false);
     TriggerRegisterPlayerUnitEvent(orders, player, EVENT_PLAYER_UNIT_ISSUED_POINT_ORDER, everyUnit);
     TriggerRegisterPlayerUnitEvent(orders, player, EVENT_PLAYER_UNIT_ISSUED_TARGET_ORDER, everyUnit);
   }
@@ -653,6 +682,7 @@ export function start(this: void): void {
   TriggerAddAction(clicks, trampoline("chess.click"));
   TriggerAddAction(shop, trampoline("chess.shop"));
   TriggerAddAction(traits, trampoline("chess.traits"));
+  TriggerAddAction(portrait, trampoline("chess.portrait"));
   TriggerAddAction(orders, trampoline("chess.order"));
   globalThis.__chessState = {
     round: 0, phase: "prep", ticks: 0, seed: 1, seats, scoreboard: undefined, buttons: new Map(), moves: [], moveTimer: CreateTimer(), clicks,
