@@ -13,6 +13,7 @@ import { installDispatch, on, trampoline } from "wisp/src/map/dispatch";
 import { installHotReload, startHotReload } from "wisp/src/map/hotReload";
 import { f32 } from "wisp/src/sim/f32";
 import { pathPoint } from "./path";
+import { buildCity } from "./city";
 import { WALKER_ID, SNOW_ID } from "./objectIds";
 import { writeLines } from "wisp/src/map/fileio";
 
@@ -79,6 +80,7 @@ export function start(this: void): void {
   install();
   const centerX = mapCenterX();
   const centerY = mapCenterY();
+  buildCity(centerX, centerY);
   const units: Body[] = [];
   for (let player = 0; player < PLAYERS; player++) {
     const unit = createBody(playerAt(player), WALKER_ID, centerX, centerY, 270.0);
