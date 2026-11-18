@@ -1,6 +1,6 @@
-// The autochess map's entry. Each player gets a board and a shop panel that
-// shows its offers with live portraits; the game keeps running while it is
-// open. Units move like chess pieces: right-click a square of your half, a
+// The autochess map's entry. Each player gets a board and a shop panel; the
+// game keeps running while it is open, and the offers stand as real units on
+// a shelf south of the player's bench. Units move like chess pieces: right-click a square of your half, a
 // bench slot or another of your units, and the unit jumps there (swapping
 // with the unit already there); right-click the circle of power to sell it.
 // When the fight starts computer-played copies fight on their own, with their
@@ -39,11 +39,9 @@ const AFTERMATH_TICKS = 12;
 
 /** Screen units (the 0.8 by 0.6 frame space) from thousandths. */
 const ui = (thousandths: number) => f32(thousandths / 1000);
-/** The shop panel's top-left corner, slot size and each offer's square portrait, in thousandths. */
+/** The shop panel's top-left corner, slot size and each offer's icon, in thousandths. */
 const PANEL_LEFT = 120, PANEL_TOP = 550, SLOT_WIDTH = 90, SLOT_HEIGHT = 150, MARGIN = 10, SIDE_WIDTH = 100;
-const PORTRAIT_SIZE = 72;
-/** A freely drawn portrait's starting scale in ten-thousandths and lift above the icon's bottom in thousandths. */
-const PORTRAIT = { zoom: 1000, lift: 4 };
+const ICON_SIZE = 72;
 
 type Action = { readonly kind: "buy"; readonly slot: number } | { readonly kind: "reroll" | "level" | "hide" };
 
@@ -62,7 +60,6 @@ interface Placed {
 interface SlotFrames {
   readonly button: framehandle;
   readonly icon: framehandle;
-  readonly portrait: framehandle;
   readonly label: framehandle;
 }
 
@@ -84,6 +81,8 @@ interface Seat {
   level: number;
   alive: boolean;
   offers: (number | undefined)[];
+  /** The offers as units on the shelf, slot by slot: Warcraft lights models in the world but not in frames. */
+  readonly shelf: ({ readonly unit: unit; readonly kind: number } | undefined)[];
   pieces: Owned[];
   placed: Placed[];
   army: unit[];
@@ -117,8 +116,6 @@ interface ChessState {
   readonly moveTimer: timer;
   /** Fires on every shop button click. */
   readonly clicks: trigger;
-  /** The shop portraits' size and height, once a -portrait command changes them from PORTRAIT. */
-  portrait?: { readonly zoom: number; readonly lift: number } | undefined;
 }
 
 declare global {
@@ -150,6 +147,13 @@ const squareX = (seat: Seat, column: number) => seat.x0 + column * CELL + 96;
 const squareY = (seat: Seat, row: number) => seat.y0 + row * CELL + 96;
 const benchY = (seat: Seat) => seat.y0 - 288;
 const padX = (seat: Seat) => seat.x0 + BOARD + 288;
+/** The shelf runs below the bench, its five spots spread across the board's width. */
+const shelfX = (seat: Seat, slot: number) => seat.x0 + 192 + slot * 288;
+const shelfY = (seat: Seat) => seat.y0 - 640;
+/** Shows the bench and the shelf, with the own half above them. */
+const panToShop = (seat: Seat, seconds: number) => {
+  if (isLocal(seat)) PanCameraToTimed(seat.x0 + HALF, seat.y0 - 64, seconds);
+};
 
 const onOwnHalf = (seat: Seat, target: unit) => {
   const x = GetUnitX(target), y = GetUnitY(target);
@@ -268,18 +272,14 @@ function createShop(seat: Seat): ShopFrames {
     const button = createButton(root, context, SLOT_WIDTH, SLOT_HEIGHT);
     BlzFrameSetPoint(button, FRAMEPOINT_TOPLEFT, root, FRAMEPOINT_TOPLEFT, ui(MARGIN + slot * SLOT_WIDTH), ui(-MARGIN));
     const icon = BlzCreateFrameByType("BACKDROP", "AutochessIcon", button, "", context);
-    BlzFrameSetSize(icon, ui(PORTRAIT_SIZE), ui(PORTRAIT_SIZE));
+    BlzFrameSetSize(icon, ui(ICON_SIZE), ui(ICON_SIZE));
     BlzFrameSetPoint(icon, FRAMEPOINT_TOP, button, FRAMEPOINT_TOP, 0, ui(-12));
     BlzFrameSetEnable(icon, false);
-    // A SPRITE films its model through the model's camera 0, a portrait model's portrait camera, into
-    // the frame's own rectangle (placePortrait). A MODEL frame fills the whole screen with black.
-    const portrait = BlzCreateFrameByType("SPRITE", "AutochessPortrait", button, "", context);
-    BlzFrameSetEnable(portrait, false);
     const label = createText(button, context, SLOT_WIDTH - 8, 60);
     BlzFrameSetPoint(label, FRAMEPOINT_TOP, icon, FRAMEPOINT_BOTTOM, 0, ui(-4));
     BlzTriggerRegisterFrameEvent(chess.clicks, button, FRAMEEVENT_CONTROL_CLICK);
     chess.buttons.set(GetHandleId(button), { seat: seat.id, action: { kind: "buy", slot } });
-    slots.push({ button, icon, portrait, label });
+    slots.push({ button, icon, label });
   }
   /** The side column's rows: the info text, then a button every 32 thousandths below a 14 gap; one ui() each, since Lua adds binary32 values in binary32. */
   const side = (index: number) => ui(-MARGIN - index * 32 - (index > 0 ? 14 : 0));
@@ -299,7 +299,26 @@ function createShop(seat: Seat): ShopFrames {
   return { root, slots, info, reroll, level };
 }
 
+/** Puts each offer on its shelf spot, facing the camera; a spot whose offer hasn't changed keeps its unit. */
+function refreshShelf(seat: Seat): void {
+  for (let slot = 0; slot < SHOP_SIZE; slot++) {
+    const offer = seat.alive ? seat.offers[slot] : undefined;
+    const shown = seat.shelf[slot];
+    if (shown?.kind === offer) continue;
+    if (shown !== undefined) RemoveUnit(shown.unit);
+    if (offer === undefined) {
+      seat.shelf[slot] = undefined;
+      continue;
+    }
+    const unit = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), kindAt(offer).id, shelfX(seat, slot), shelfY(seat), 270.0);
+    SetUnitInvulnerable(unit, true);
+    jump(unit, shelfX(seat, slot), shelfY(seat));
+    seat.shelf[slot] = { unit, kind: offer };
+  }
+}
+
 function refreshShop(seat: Seat): void {
+  refreshShelf(seat);
   const shop = seat.shop;
   if (shop === undefined) return;
   const chess = state();
@@ -310,9 +329,6 @@ function refreshShop(seat: Seat): void {
     if (offer === undefined) return;
     const kind = kindAt(offer);
     BlzFrameSetTexture(frames.icon, `ReplaceableTextures\\CommandButtons\\${kind.icon}.blp`, 0, true);
-    // A side-by-side trial while the look is tuned in Warcraft: odd slots draw the unit's own model.
-    BlzFrameSetModel(frames.portrait, floorMod(slot, 2) === 1 ? `${kind.model}.mdl` : `${kind.model}_portrait.mdl`, 0);
-    placePortrait(frames);
     BlzFrameSetText(frames.label, `${kind.name}\n${kind.cost} gold\n${kind.race}\n${kind.role}`);
   });
   const fighting = seat.pieces.filter((owned) => onOwnHalf(seat, owned.unit)).length;
@@ -373,32 +389,6 @@ function shopCommand(): void {
   seat.shopOpen = !seat.shopOpen;
   if (state().phase !== "prep") say(seat, "The shop opens after the fight.");
   refreshShop(seat);
-}
-
-/**
- * A slot's portrait: a dot on the icon's bottom edge, raised by lift thousandths, whose model stands on
- * it at zoom ten-thousandths of its size. Sized over the whole icon at scale 1, the model came out
- * many times the screen's height, so the frame's size doesn't fit the model; only the scale does.
- */
-function placePortrait(frames: SlotFrames): void {
-  const { zoom, lift } = state().portrait ?? PORTRAIT;
-  BlzFrameClearAllPoints(frames.portrait);
-  BlzFrameSetSize(frames.portrait, ui(1), ui(1));
-  BlzFrameSetPoint(frames.portrait, FRAMEPOINT_BOTTOMLEFT, frames.icon, FRAMEPOINT_BOTTOM, 0, ui(lift));
-  BlzFrameSetScale(frames.portrait, f32(zoom / 10000));
-}
-
-/** "-portrait <zoom> <lift>" redraws every shop portrait at that size and height; "-portrait" alone restores PORTRAIT. */
-function portraitCommand(): void {
-  const seat = seatOf(GetTriggerPlayer());
-  if (seat === undefined) return;
-  const chess = state();
-  const [, zoom, lift] = GetEventPlayerChatString().split(" ");
-  const current = chess.portrait ?? PORTRAIT;
-  chess.portrait = zoom === undefined ? undefined : { zoom: S2I(zoom), lift: lift === undefined ? current.lift : S2I(lift) };
-  const shown = chess.portrait ?? PORTRAIT;
-  for (const each of chess.seats) each.shop?.slots.forEach((frames) => placePortrait(frames));
-  say(seat, `Portraits: zoom ${shown.zoom}, lift ${shown.lift}.`);
 }
 
 function traitsCommand(): void {
@@ -463,6 +453,7 @@ function startPrep(): void {
     seat.gold += chess.round === 1 ? START_GOLD : income(seat.gold);
     seat.offers = rollShop(seat.level, random);
     seat.shopOpen = true;
+    if (chess.round > 1) panToShop(seat, 0.5);
     say(seat, `Round ${chess.round} against ${against}: ${PREP_SECONDS} seconds to buy and place units. Up to ${seat.level} units on the south half of your board fight.`);
     refreshShop(seat);
   }
@@ -535,6 +526,7 @@ function resolve(seat: Seat): void {
   for (const owned of seat.pieces) RemoveUnit(owned.unit);
   seat.pieces = [];
   seat.placed = [];
+  refreshShelf(seat);
   sayAll(`${nameOf(seat)} is out after round ${chess.round}.`);
 }
 
@@ -578,14 +570,14 @@ function begin(): void {
   FogEnable(false);
   FogMaskEnable(false);
   for (const seat of chess.seats) {
-    if (isLocal(seat)) PanCameraToTimed(seat.x0 + HALF, seat.y0 + QUARTER, 0);
+    panToShop(seat, 0);
     seat.shop = createShop(seat);
   }
   const board = CreateMultiboard();
   MultiboardSetColumnCount(board, 4);
   MultiboardSetRowCount(board, 1 + chess.seats.length);
   chess.scoreboard = board;
-  sayAll("Autochess: buy units in the shop. Right-click a square to move a unit there like a chess piece, or the circle of power to sell it. Units on the south half of your board fight on their own; two different units of a race or role unlock a trait bonus (-traits).");
+  sayAll("Autochess: buy units in the shop; its offers stand on the shelf below your bench, in the same order. Right-click a square to move a unit there like a chess piece, or the circle of power to sell it. Units on the south half of your board fight on their own; two different units of a race or role unlock a trait bonus (-traits).");
   startPrep();
   showScoreboard();
   MultiboardDisplay(board, true);
@@ -633,7 +625,6 @@ export function install(this: void): void {
   on("chess.click", click);
   on("chess.shop", shopCommand);
   on("chess.traits", traitsCommand);
-  on("chess.portrait", portraitCommand);
   on("chess.order", order);
   on("chess.place", place);
   installHotReload();
@@ -665,7 +656,6 @@ export function start(this: void): void {
   const clicks = CreateTrigger();
   const shop = CreateTrigger();
   const traits = CreateTrigger();
-  const portrait = CreateTrigger();
   const orders = CreateTrigger();
   const everyUnit = Filter(() => true);
   for (let id = 0; id < SEATS; id++) {
@@ -674,11 +664,10 @@ export function start(this: void): void {
     seats.push({
       id, x0: centerX + (id === 0 ? -ARENA_OFFSET : ARENA_OFFSET) - HALF, y0: centerY - HALF,
       gold: 0, health: START_HEALTH, level: START_LEVEL, alive: true,
-      offers: [], pieces: [], placed: [], army: [], foes: [], foeName: "the creeps", resolved: true, shop: undefined, shopOpen: true,
+      offers: [], shelf: [], pieces: [], placed: [], army: [], foes: [], foeName: "the creeps", resolved: true, shop: undefined, shopOpen: true,
     });
     TriggerRegisterPlayerChatEvent(shop, player, "-shop", true);
     TriggerRegisterPlayerChatEvent(traits, player, "-traits", true);
-    TriggerRegisterPlayerChatEvent(portrait, player, "-portrait", false);
     TriggerRegisterPlayerUnitEvent(orders, player, EVENT_PLAYER_UNIT_ISSUED_POINT_ORDER, everyUnit);
     TriggerRegisterPlayerUnitEvent(orders, player, EVENT_PLAYER_UNIT_ISSUED_TARGET_ORDER, everyUnit);
   }
@@ -687,7 +676,6 @@ export function start(this: void): void {
   TriggerAddAction(clicks, trampoline("chess.click"));
   TriggerAddAction(shop, trampoline("chess.shop"));
   TriggerAddAction(traits, trampoline("chess.traits"));
-  TriggerAddAction(portrait, trampoline("chess.portrait"));
   TriggerAddAction(orders, trampoline("chess.order"));
   globalThis.__chessState = {
     round: 0, phase: "prep", ticks: 0, seed: 1, seats, scoreboard: undefined, buttons: new Map(), moves: [], moveTimer: CreateTimer(), clicks,

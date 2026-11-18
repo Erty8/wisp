@@ -47,7 +47,6 @@ export interface MapInfo {
   readonly tables: Uint8Array;
 }
 
-const FORMAT = 39;
 const USER = 1;
 const HUMAN = 1;
 const USE_CUSTOM_FORCES = 0x40;
@@ -73,6 +72,56 @@ export const ENVIRONMENT_FIELDS: readonly [Field, number][] = [
   ["int", 3],
   ["int", 10],
 ];
+
+/**
+ * war3map.w3i format 31's environment block (World Editor 1.31 to 1.35):
+ * main ground; loading screen number, model, text, title and subtitle; game
+ * data set; prologue path, text, title and subtitle; fog type, start, end,
+ * density and colour; weather; sound environment; light environment; water
+ * colour; then script language, Supported Modes and game data version.
+ */
+export const FORMAT_31_ENVIRONMENT_FIELDS: readonly [Field, number][] = [
+  ["byte", 1],
+  ["int", 1],
+  ["string", 4],
+  ["int", 1],
+  ["string", 4],
+  ["int", 5],
+  ["int", 1],
+  ["string", 1],
+  ["byte", 1],
+  ["int", 1],
+  ["int", 3],
+];
+
+/** Where a format keeps what Wisp reads and changes. */
+interface Layout {
+  readonly environment: readonly [Field, number][];
+  /** Format 39 player records carry a race skin after the race; format 31's don't. */
+  readonly raceSkin: boolean;
+  readonly loadingScreenNumber: number;
+  readonly loadingScreenModel: number;
+  /** Bytes from the environment block's end to its Supported Modes int. */
+  readonly supportedModesFromEnd: number;
+}
+
+// Format 39 keeps its Supported Modes int 60 bytes before the end of the environment block;
+// format 31 keeps it 8 bytes before, ahead of the game data version.
+const LAYOUTS: Readonly<Record<number, Layout>> = {
+  39: { environment: ENVIRONMENT_FIELDS, raceSkin: true, loadingScreenNumber: 5, loadingScreenModel: 9, supportedModesFromEnd: 60 },
+  31: { environment: FORMAT_31_ENVIRONMENT_FIELDS, raceSkin: false, loadingScreenNumber: 1, loadingScreenModel: 5, supportedModesFromEnd: 8 },
+};
+
+/** The war3map.w3i format a map's info was read from: the first int of its version bytes. */
+export function mapInfoFormat(info: Pick<MapInfo, "versions">): number {
+  return new DataView(info.versions.buffer, info.versions.byteOffset, info.versions.byteLength).getInt32(0, true);
+}
+
+function layoutOf(format: number): Layout {
+  const layout = LAYOUTS[format];
+  if (layout === undefined) throw new Error(`war3map.w3i format ${format} is not supported; expected ${Object.keys(LAYOUTS).join(" or ")}`);
+  return layout;
+}
 
 interface Cursor {
   readonly bytes: Uint8Array;
@@ -109,15 +158,14 @@ function string(cursor: Cursor): string {
 
 export function decodeMapInfo(bytes: Uint8Array): MapInfo {
   const cursor: Cursor = { bytes, view: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), offset: 0 };
-  const format = int32(cursor);
-  if (format !== FORMAT) throw new Error(`war3map.w3i format ${format} is not supported; expected ${FORMAT}`);
+  const layout = layoutOf(int32(cursor));
   cursor.offset = 0;
   const versions = take(cursor, 28);
   const [name, author, description, suggestedPlayers] = [string(cursor), string(cursor), string(cursor), string(cursor)];
   const bounds = take(cursor, 56);
   const flags = int32(cursor);
   const environmentStart = cursor.offset;
-  for (const [field, count] of ENVIRONMENT_FIELDS) {
+  for (const [field, count] of layout.environment) {
     for (let index = 0; index < count; index++) {
       if (field === "string") string(cursor);
       else take(cursor, field === "byte" ? 1 : 4);
@@ -128,7 +176,7 @@ export function decodeMapInfo(bytes: Uint8Array): MapInfo {
     id: int32(cursor),
     controller: int32(cursor),
     race: int32(cursor),
-    raceSkin: int32(cursor),
+    raceSkin: layout.raceSkin ? int32(cursor) : 0,
     fixedStart: int32(cursor),
     name: string(cursor),
     x: float32(cursor),
@@ -170,6 +218,7 @@ function concat(parts: readonly Uint8Array[]): Uint8Array {
 }
 
 export function encodeMapInfo(info: MapInfo): Uint8Array {
+  const layout = layoutOf(mapInfoFormat(info));
   return concat([
     info.versions,
     ...[info.name, info.author, info.description, info.suggestedPlayers].map(stringBytes),
@@ -178,7 +227,7 @@ export function encodeMapInfo(info: MapInfo): Uint8Array {
     info.environment,
     int32Bytes(info.players.length),
     ...info.players.flatMap((player) => [
-      ...[player.id, player.controller, player.race, player.raceSkin, player.fixedStart].map(int32Bytes),
+      ...(layout.raceSkin ? [player.id, player.controller, player.race, player.raceSkin, player.fixedStart] : [player.id, player.controller, player.race, player.fixedStart]).map(int32Bytes),
       stringBytes(player.name),
       float32Bytes(player.x),
       float32Bytes(player.y),
@@ -190,39 +239,39 @@ export function encodeMapInfo(info: MapInfo): Uint8Array {
   ]);
 }
 
-const LOADING_SCREEN_NUMBER = 5;
-const LOADING_SCREEN_MODEL = 9;
 const CUSTOM_LOADING_SCREEN = -1;
 
-export function loadingScreenModel(environment: Uint8Array): string {
-  return new TextDecoder().decode(environment.subarray(LOADING_SCREEN_MODEL, environment.indexOf(0, LOADING_SCREEN_MODEL)));
+export function loadingScreenModel(environment: Uint8Array, format = 39): string {
+  const at = layoutOf(format).loadingScreenModel;
+  return new TextDecoder().decode(environment.subarray(at, environment.indexOf(0, at)));
 }
 
-function withLoadingScreen(environment: Uint8Array, model: string | undefined): Uint8Array {
+function withLoadingScreen(environment: Uint8Array, model: string | undefined, layout: Layout): Uint8Array {
   if (model === undefined) return environment;
-  const end = environment.indexOf(0, LOADING_SCREEN_MODEL);
-  return concat([environment.subarray(0, LOADING_SCREEN_NUMBER), int32Bytes(CUSTOM_LOADING_SCREEN), stringBytes(model), environment.subarray(end + 1)]);
+  const end = environment.indexOf(0, layout.loadingScreenModel);
+  return concat([environment.subarray(0, layout.loadingScreenNumber), int32Bytes(CUSTOM_LOADING_SCREEN), stringBytes(model), environment.subarray(end + 1)]);
 }
 
-// war3map.w3i format 39 keeps its Supported Modes int 60 bytes before the end of the environment block; 1 is SD, 2 is HD, 3 both.
-const SUPPORTED_MODES_FROM_END = 60;
+// Supported Modes: 1 is SD, 2 is HD, 3 both.
 const MODE_VALUES: Readonly<Record<SupportedModes, number>> = { sd: 1, hd: 2, both: 3 };
 
-export function supportedModes(environment: Uint8Array): SupportedModes | undefined {
-  const value = new DataView(environment.buffer, environment.byteOffset, environment.length).getInt32(environment.length - SUPPORTED_MODES_FROM_END, true);
+export function supportedModes(environment: Uint8Array, format = 39): SupportedModes | undefined {
+  const at = environment.length - layoutOf(format).supportedModesFromEnd;
+  const value = new DataView(environment.buffer, environment.byteOffset, environment.length).getInt32(at, true);
   return (Object.keys(MODE_VALUES) as SupportedModes[]).find((mode) => MODE_VALUES[mode] === value);
 }
 
-function withSupportedModes(environment: Uint8Array, modes: SupportedModes | undefined): Uint8Array {
+function withSupportedModes(environment: Uint8Array, modes: SupportedModes | undefined, layout: Layout): Uint8Array {
   if (modes === undefined) return environment;
-  const at = environment.length - SUPPORTED_MODES_FROM_END;
+  const at = environment.length - layout.supportedModesFromEnd;
   return concat([environment.subarray(0, at), int32Bytes(MODE_VALUES[modes]), environment.subarray(at + 4)]);
 }
 
 export function declareMap(base: MapInfo, name: string, map: MapDeclaration): MapInfo {
+  const layout = layoutOf(mapInfoFormat(base));
   return {
     ...base,
-    environment: withSupportedModes(withLoadingScreen(base.environment, map.loadingScreenModel), map.supportedModes),
+    environment: withSupportedModes(withLoadingScreen(base.environment, map.loadingScreenModel, layout), map.supportedModes, layout),
     name,
     author: map.author,
     description: map.description,
@@ -239,7 +288,9 @@ export function declareMap(base: MapInfo, name: string, map: MapDeclaration): Ma
         name: playerName,
         x: existing?.x ?? 0,
         y: existing?.y ?? 0,
-        priorities: existing?.priorities ?? [0, 0, 0, 0],
+        // The declared map's config sets no start-location priorities (mapConfig), so a
+        // melee base's are dropped rather than refused.
+        priorities: [0, 0, 0, 0],
       };
     }),
     forces: map.forces.map((force) => ({
@@ -289,7 +340,7 @@ export function mapConfig(info: MapInfo): string {
       `SetPlayerStartLocation(${player(slot.id)}, ${index})`,
       `SetPlayerColor(${player(slot.id)}, ConvertPlayerColor(${slot.id}))`,
       `SetPlayerRacePreference(${player(slot.id)}, RACE_PREF_HUMAN)`,
-      `SetPlayerRaceSkin(${player(slot.id)}, ConvertRacePref(${slot.raceSkin}))`,
+      ...(layoutOf(mapInfoFormat(info)).raceSkin ? [`SetPlayerRaceSkin(${player(slot.id)}, ConvertRacePref(${slot.raceSkin}))`] : []),
       `SetPlayerRaceSelectable(${player(slot.id)}, true)`,
       `SetPlayerController(${player(slot.id)}, MAP_CONTROL_USER)`,
     );

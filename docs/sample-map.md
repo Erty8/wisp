@@ -61,10 +61,13 @@ client's `liveHandleCounts()` before allocation and after cleanup.
 ## The base map
 
 Base maps stay outside the repository. A base map is a Warcraft III World
-Editor map (war3map.w3i format 39) saved with Lua as its script language. The
-build keeps its terrain, size, tileset, camera bounds and other files, and
-replaces its name, description, players and forces with the map declaration
-in scripts/sample.ts. Its war3map.lua must define `main()` and `config()` once
+Editor map (war3map.w3i format 39, or format 31 as World Editor 1.31 to 1.35
+saved it) saved with Lua as its script language. The build keeps its terrain,
+size, tileset, camera bounds and other files, and replaces its name,
+description, players and forces with the map declaration in
+scripts/sample.ts. A format 31 base keeps format 31: its player records carry
+no race skin, so its config sets none. A melee base's start-location
+priorities are dropped, since the declared map's config sets none. Its war3map.lua must define `main()` and `config()` once
 and call `RunInitializationTriggers()` once, as World Editor writes it; the
 build suppresses that call, so the default melee trigger never runs. The
 sample builds from a 16 KB, one-slot base with that default trigger and no

@@ -1,6 +1,6 @@
 // The autochess headless journey, declared once for Bun and 32-bit Lua:
 // round 1's shop, where player 1 clicks the first offer and buys it, a
-// -shop chat, a hot reload, a -traits chat, a -portrait chat and four rounds with empty boards
+// -shop chat, a hot reload, a -traits chat and four rounds with empty boards
 // (moving units needs Warcraft's orders): three against creeps, which cost
 // health, then round 4 against the other player's board.
 import type { Journey } from "wisp/src/headless/journey";
@@ -26,6 +26,7 @@ export const CHESS_MAP = {
     SetPlayerState: "the gold display mirrors the map's own gold, which the journey checks through messages",
     SetPlayerAlliance: FIGHTS, IssuePointOrder: FIGHTS,
     IsUnitType: "nobody dies headless: every unit reads as alive",
+    SetUnitInvulnerable: "only shelf units are invulnerable, and headless nothing attacks them",
     TriggerRegisterPlayerUnitEvent: ORDERS, Filter: ORDERS,
   },
 };
@@ -41,7 +42,5 @@ export const CHESS_JOURNEY: Journey = {
     { frame: 300, player: 1, chat: "-shop" },
     { frame: 600, reload: true },
     { frame: 900, player: 1, chat: "-traits" },
-    { frame: 1000, player: 0, chat: "-portrait 8 -10" },
-    { frame: 1100, player: 0, chat: "-portrait" },
   ],
 };

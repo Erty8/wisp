@@ -21,13 +21,11 @@ function playInBun() {
   return { clients, result: runJourney(clients, CHESS_JOURNEY) };
 }
 
-test("player 1 buys from the shop panel and tunes its portraits; both clients take a hot reload, lose three creep rounds with empty boards and reach the first board round, with the same native calls", () => {
+test("player 1 buys from the shop panel; both clients take a hot reload, lose three creep rounds with empty boards and reach the first board round, with the same native calls", () => {
   const { clients, result } = playInBun();
   expect(result.divergence).toBeUndefined();
   expect(result.reloads).toEqual([]);
   expect(clients.clients[0]?.messages.join("\n")).toMatch(/Bought [A-Za-z ]+ \(4 gold left\)\./);
-  expect(clients.clients[0]?.messages).toContain("Portraits: zoom 8, lift -10.");
-  expect(clients.clients[0]?.messages).toContain("Portraits: zoom 1000, lift 4.");
   for (const client of clients.clients) {
     expect(client.errors).toEqual([]);
     expect(client.missingNatives).toEqual([]);
