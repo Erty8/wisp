@@ -1,5 +1,12 @@
 import { assertEquals, test } from "wisp/src/runtime/testing";
-import { SUBTITLE, sceneChoice, LIFE_BAR, MANA_BAR, MINIMAP, PICKER_PANEL, SCREEN_HEIGHT, SCREEN_WIDTH, layoutBoxes, learnButton, overlaps, pickerBoxes, spellSlot } from "./layout";
+import { SUBTITLE, sceneChoice, LIFE_BAR, MANA_BAR, MINIMAP, PICKER_PANEL, QUEST_LOG, SCREEN_HEIGHT, SCREEN_WIDTH, layoutBoxes, learnButton, overlaps, pickerBoxes, spellSlot } from "./layout";
+
+test("[property] rps layout: the quest journal sits at the right edge under the minimap, clear of every other box and a scene's choices", () => {
+  assertEquals(QUEST_LOG.left + QUEST_LOG.width, MINIMAP.left + MINIMAP.width, "right edge with the minimap");
+  assertEquals(QUEST_LOG.bottom + QUEST_LOG.height < MINIMAP.bottom && QUEST_LOG.bottom > 0, true, "under the minimap, on screen");
+  for (const { name, box } of layoutBoxes()) assertEquals(overlaps(QUEST_LOG, box), false, name);
+  for (let index = 0; index < 4; index++) assertEquals(overlaps(QUEST_LOG, sceneChoice(index)), false, `choice ${index}`);
+});
 
 test("[property] rps layout: the bars and the spell bar stay on screen in the bottom quarter, the minimap at the top, and none overlap", () => {
   const boxes = layoutBoxes();

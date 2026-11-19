@@ -9,7 +9,8 @@ moves with
 WASD relative to that camera, fights with manual swings and a guard that can
 parry, soft-targets enemies with Tab and captures outposts for gold. Nothing is ever selected and Warcraft's interface is all
 off screen apart from the minimap, in the top-right corner: the map draws its
-own health and mana bars and a spell bar to cast and learn from. It calls Warcraft's natives directly
+own health and mana bars, a spell bar to cast and learn from, and a quest
+journal at the right under the minimap. It calls Warcraft's natives directly
 from TypeScript compiled to Lua, like the [sample map](sample-map.md), and
 shares its layout: pure rules in src/rules.ts and src/layout.ts, the entry in
 src/main.ts, the combat rules in src/combat.ts, the races, heroes and armies
@@ -488,7 +489,9 @@ does), `flag` (set, or cleared with `value: false`), `spawn` (units of a type
 that join the hero's squad in a role), `fight` (hostile units held until
 the scene ends, then attacking him: from 700 behind the hero, around the
 NPC's site 300 out with `at: "site"`, or around a camp 900 past the NPC,
-away from the map's center, with `at: "camp"`), `hostile` (the NPC, or his
+away from the map's center, with `at: "camp"`; or, with `at: "objective"`,
+standing guard 200 around the scene's objective until the hero comes, see
+Objectives), `hostile` (the NPC, or his
 company of one unit type with `code`, turns on the hero as the scene ends:
 it joins the hostile creeps, can be hurt and attacks, or with `hold` stands
 dazed that many seconds first), `ally` (the NPC, or his company of one unit
@@ -528,9 +531,10 @@ the sergeant's:
   tracks end at the eastern mine, pays 40 gold and sets `knowsMines`; a
   soldier of his squad says they'll follow. After that she only hurries him on.
 - `MERCENARY_SCENE`, Gor'mak, an orc grunt: two forest trolls for 90 gold
-  (greyed out without it), or his challenge, two gnolls who attack once the
-  scene ends (`provedToGormak`); come back and he gives the trolls for free.
-  He gives them once (`gormakPaid`).
+  (greyed out without it), or his challenge (`provedToGormak`), two gnolls
+  waiting at the gnoll den, his objective; once they fall (`pupsBeaten`),
+  come back and he gives the trolls for free. Back before then, he sends the
+  hero to the den again. He gives the trolls once (`gormakPaid`).
 - `HEALER_SCENE`, Sister Maren, a priest: she heals the hero, life and mana,
   for 20 gold, and once for free for a helper of the sergeant's (a hidden
   choice, shown only with `helpingSergeant` and before `marenFavor`).
@@ -635,10 +639,12 @@ NPC who has turned can't be talked to again (`talkable`).
 
 - `CONTAINMENT_SCENE`, Battle-Mage Seris, a Dalaran sorceress outside a
   shattered observatory: her wards on two water elementals and a greater
-  one are failing. Seal them, and the elementals rise around her site and she
-  fights them beside the hero; she pays 80 gold once they fall (`wardsSealed`) and thanks the hero after. Harvest
-  their cores instead, and two rise, she turns on the hero, and the cores pay
-  140 gold once all three have fallen.
+  one are failing, and they have broken loose to the ley-line rift, her
+  objective. Seal them, and she sets out for the rift and fights them beside
+  the hero; she pays 80 gold once they fall (`wardsSealed`) and thanks the
+  hero after. Harvest their cores instead, and two wait at the rift while she
+  turns on the hero where she stands, and the cores pay 140 gold once all
+  three have fallen (`coresTaken`).
 - `GATE_SCENE`, Captain Haldric, a knight with three footmen, blockading the
   pass against two blood elf Spellbreakers (`TWOSHOT`, then `CLOSEUP`). Force
   the blockade, and he and his footmen turn while the Spellbreakers fight
@@ -650,8 +656,9 @@ NPC who has turned can't be talked to again (`talkable`).
 - `TIMBERLAND_SCENE`, Foreman Gregor, a peasant at the lumber outpost
   (`OTS`), and the hero's sergeant if he has a squad: a daylight assault on
   the troll camp (three forest trolls, two shadow priests and their warlord)
-  or a night raid on fewer of them awake (one of each); the camp stands 900
-  past the foreman. Either pays 100 once it falls (`campCleared`). The map
+  or a night raid on fewer of them awake (one of each); the camp stands on
+  the troll ridge, his objective. Either pays 100 once it falls
+  (`campCleared`). The map
   has no day and night of its own yet: the raid is only the smaller fight.
 - `OGRE_SCENE`, Gorm-and-Grum, an ogre magi with two ogre bruisers at the
   quarry (`CLOSEUP`, then `OTS`): mock him in the angry mood and he duels
@@ -670,6 +677,45 @@ Warcraft's gold quest giver icon on his minimap (`CreateMinimapIconOnUnit`,
 the interface skin's `MinimapQuestGiverIcon`, or MiniMap-QuestGiver.mdl
 without one, shown through fog and black mask), visible only to him
 (`SetMinimapIconVisible`); both go once he has played the scene through.
+
+**Objectives**: a quest's enemies don't rise beside the NPC who gives it.
+A scene names its objective (`objective`: a place's name, an angle in
+tenths of a degree and a distance from the playable area's center), and its
+`fight` effects with `at: "objective"` stand there, 200 around it
+(`OBJECTIVE_RADIUS`), not paused, and wait as hostile creeps do until the
+hero comes. `objectiveSpot` keeps the place 600 inside the playable area
+(`OBJECTIVE_MARGIN`). The fight's tag marks it on the player's minimap,
+once: Warcraft's quest objective icon (the interface skin's
+`MinimapQuestObjectivePrimary`, or MiniMap-QuestObjectivePrimary.mdl
+without one) at the place, made in every client and shown only to him, a
+4-second ping there on his minimap, and a message naming the place
+(`markObjective`). Once every unit under the tag has fallen, `questTick`
+takes the icon down. An NPC who allies for the fight (Seris, sealing the
+wards) attack-moves to the objective as the scene ends. The places are the
+ley-line rift (`CONTAINMENT_SCENE`, 3800 out at 45 degrees), the troll
+ridge (`TIMBERLAND_SCENE`, 3800 out at 225 degrees) and the gnoll den
+(`MERCENARY_SCENE`, 3200 out at 135 degrees), each at least 1500 from its
+NPC (a test checks). `sceneProblems` reports a fight at an objective the
+scene doesn't name, or without a tag to mark it by. The icon's file and
+skin key are untested in Warcraft yet.
+
+**The quest journal** (src/journal.ts, `JOURNAL`): at the right edge of the
+screen under the minimap (`QUEST_LOG`), the player's HUD lists the quests he
+is in the middle of, "Quests" in gold over each quest's title in gold and its
+objective under it. Nothing is stored for it: each entry is a title, an
+objective and conditions on the player's flags (`activeQuests`, with
+`meets`), active from the flag the choice that takes the quest sets until the
+flag that settles it, usually a bounty's: `helpingSergeant` until
+`knowsMines` (find Ilyra), `provedToGormak` until `pupsBeaten` (the den),
+then until `gormakPaid` (back to Gor'mak),
+`sealingWards` until `wardsSealed`, `harvestedCores` until `coresTaken`,
+`gateForced` or `gateEnforced` until `gateSettled`, `campAssault` until
+`campCleared`, and `ogreFight` until `ogreBeaten`. A quest is a new entry,
+and its start and end flags must be ones a scene sets (a test checks). The
+HUD sets the text every 0.1 s (`hudTick`, `journalText`), empty with no quest
+under way, and hides it with the rest of the HUD during a scene. The patrol's
+search at the eastern mine has no ending yet, so the journal drops the quest
+once Ilyra has pointed the way.
 
 The voice lengths, look-at, gestures and camera glides are untested in
 Warcraft yet: a missing recording plays nothing and the line still shows.

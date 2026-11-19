@@ -24,6 +24,9 @@ export const MANA_BAR: Box = { left: MARGIN, bottom: MARGIN, width: 130, height:
 export const MINIMAP_SIZE = 130;
 export const MINIMAP: Box = { left: SCREEN_WIDTH - MARGIN - MINIMAP_SIZE, bottom: SCREEN_HEIGHT - MARGIN - MINIMAP_SIZE, width: MINIMAP_SIZE, height: MINIMAP_SIZE };
 
+/** The quest journal: text at the right edge under the minimap, above where a scene's choices stack. */
+export const QUEST_LOG: Box = { left: SCREEN_WIDTH - MARGIN - 180, bottom: 270, width: 180, height: MINIMAP.bottom - 10 - 270 };
+
 /** The spell bar: 4 square slots at the bottom center, each with its learn button above it. */
 export const SPELL_SLOTS = 4;
 const SLOT_SIZE = 40, SLOT_STEP = 46, SLOT_BOTTOM = 18, LEARN_SIZE = 16;

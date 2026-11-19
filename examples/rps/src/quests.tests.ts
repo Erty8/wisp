@@ -1,5 +1,5 @@
 import { assertEquals, test } from "wisp/src/runtime/testing";
-import { choiceStates, meets, openingOf, sceneProblems } from "./dialogue";
+import { MERCENARY_SCENE, OBJECTIVE_MARGIN, choiceStates, meets, objectiveSpot, openingOf, sceneProblems } from "./dialogue";
 import { CONTAINMENT_SCENE, GATE_SCENE, NOBLE_HEROES, OGRE_SCENE, QUEST_SCENES, QUEST_SITES, TIMBERLAND_SCENE } from "./quests";
 
 const choicesOf = (scene: typeof GATE_SCENE, id: string) => scene.nodes.find((node) => node.id === id)?.choices ?? [];
@@ -50,4 +50,31 @@ test("rps quests: the ogre fights alone in a duel, dazed with his bruisers after
   assertEquals(turns("duel"), "ogre", "duel");
   assertEquals(turns("split"), "ogre+4s,nogr+4s", "split");
   assertEquals(turns("ambush"), "ogre,nogr", "ambush");
+});
+
+test("[property] rps quests: a quest's fights wait at its objective, away from the NPC, not beside him", () => {
+  for (const scene of [...QUEST_SCENES, MERCENARY_SCENE]) {
+    for (const node of scene.nodes) {
+      for (const effect of node.effects ?? []) {
+        if (effect.kind === "fight") assertEquals(effect.at, "objective", `${scene.name}: ${node.id}`);
+      }
+    }
+  }
+  const center = { x: 0, y: 0 }, wide = { minX: -9000, minY: -9000, maxX: 9000, maxY: 9000 };
+  for (const site of QUEST_SITES) {
+    const objective = site.scene.objective;
+    if (objective === undefined) continue;
+    const at = objectiveSpot(center, objective, wide);
+    const npc = objectiveSpot(center, { name: "", angle: site.angle, distance: site.distance }, wide);
+    const apart = (at.x - npc.x) * (at.x - npc.x) + (at.y - npc.y) * (at.y - npc.y);
+    assertEquals(apart >= 1500 * 1500, true, `${site.scene.name}: ${objective.name} at least 1500 from the NPC`);
+  }
+});
+
+test("rps quests: an objective is kept inside the playable area, OBJECTIVE_MARGIN in from its edge", () => {
+  const objective = { name: "far", angle: 0, distance: 5000 };
+  const at = objectiveSpot({ x: 0, y: 0 }, objective, { minX: -3000, minY: -3000, maxX: 3000, maxY: 3000 });
+  assertEquals(`${at.x},${at.y}`, `${3000 - OBJECTIVE_MARGIN},0`, "pulled in");
+  const inside = objectiveSpot({ x: 0, y: 0 }, objective, { minX: -9000, minY: -9000, maxX: 9000, maxY: 9000 });
+  assertEquals(`${inside.x},${inside.y}`, "5000,0", "left where it is");
 });

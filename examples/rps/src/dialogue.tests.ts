@@ -166,12 +166,15 @@ test("rps dialogue: the scout talks only to the sergeant's helpers, then only hu
   assertEquals(openingOf(SCOUT_SCENE, new Set(["helpingSergeant", "knowsMines"]), 0), "hurry", "already told");
 });
 
-test("rps dialogue: the mercenary sells his trolls for 90 gold, gives them for his challenge, and only once", () => {
+test("rps dialogue: the mercenary sells his trolls for 90 gold, gives them once his challenge's gnolls are down at their den, and only once", () => {
   const offer = MERCENARY_SCENE.nodes.find((node) => node.id === "offer")?.choices ?? [];
   assertEquals(choiceStates(offer, new Set(), 89).join(","), "greyed,open,open", "short of gold");
   assertEquals(choiceStates(offer, new Set(), 90).join(","), "open,open,open", "with the gold");
-  assertEquals(openingOf(MERCENARY_SCENE, new Set(["provedToGormak"]), 0), "respect", "after the challenge");
-  assertEquals(openingOf(MERCENARY_SCENE, new Set(["provedToGormak", "gormakPaid"]), 0), "done", "trolls given");
+  assertEquals(openingOf(MERCENARY_SCENE, new Set(["provedToGormak"]), 0), "waiting", "the gnolls still standing");
+  assertEquals(openingOf(MERCENARY_SCENE, new Set(["provedToGormak", "pupsBeaten"]), 0), "respect", "after the challenge");
+  assertEquals(openingOf(MERCENARY_SCENE, new Set(["provedToGormak", "pupsBeaten", "gormakPaid"]), 0), "done", "trolls given");
+  const prove = MERCENARY_SCENE.nodes.find((node) => node.id === "prove")?.effects ?? [];
+  assertEquals(prove.some((effect) => effect.kind === "fight" && effect.at === "objective" && effect.bounty?.flag === "pupsBeaten"), true, "the gnolls wait at the den");
 });
 
 test("rps dialogue: the healer's free heal shows only to the sergeant's helpers, once", () => {

@@ -12,6 +12,7 @@ import "../src/roster.tests";
 import "../src/dialogue.tests";
 import "../src/killcam.tests";
 import "../src/quests.tests";
+import "../src/journal.tests";
 import "../src/units.tests";
 
 for (const { name, run } of registeredTests) test(name, run);

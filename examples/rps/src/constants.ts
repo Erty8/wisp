@@ -72,6 +72,13 @@ export const FIGHT_DISTANCE = 700;
 export const SITE_RADIUS = 300;
 export const CAMP_DISTANCE = 900;
 export const CAMP_RADIUS = 150;
+/** Enemies waiting at a quest's objective stand this far around it. */
+export const OBJECTIVE_RADIUS = 200;
+/** Warcraft's quest objective minimap icon: its interface skin key, and its file. */
+export const OBJECTIVE_ICON_SKIN_KEY = "MinimapQuestObjectivePrimary";
+export const OBJECTIVE_ICON_FILE = "UI\Minimap\MiniMap-QuestObjectivePrimary.mdl";
+/** How long the minimap pings a new objective, in seconds. */
+export const OBJECTIVE_PING_SECONDS = 4;
 export const BARK_TEXT_SIZE = FLOAT_TEXT_SIZE;
 
 /**

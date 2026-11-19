@@ -23,11 +23,12 @@ import { f32 } from "wisp/src/sim/f32";
 import { floorDiv, floorMod } from "wisp/src/sim/intMath";
 import { type Box, MINIMAP, OFF_SCREEN_BOX } from "./layout";
 import { type Hud, type SlotView, createHud, hudAction, showHud } from "./hud";
+import { activeQuests, journalText } from "./journal";
 import { type Picker, createPicker, pickerAction, showPicker } from "./picker";
 import { type Letterbox, choiceOf, createLetterbox, setFade, showChoices, showSubtitle } from "./letterbox";
 import {
   type Actor, type Bounty, type DialogueNode, type Effect, type Framing, type LastShot, type Mood, type Scene,
-  BARK_RANGE, BARK_RESET_RANGE, FACE_HEIGHT, FADE_TICKS, RECRUIT_SCENE, SCENE_PAUSE_RANGE, STARTING_GOLD, TALK_ANIMATION, TALK_RANGE, TALK_RESET_RANGE, TAVERN_SCENE, WANDERERS, choiceStates, countTakes, directShot, fadeAlpha, fillLine, framing, gestureOf, hasNews, lineTicks, listenerOf, meets, openingOf, recordingFile, recruitOutcome, sceneFraming, seenFlag, shotFace, talkSpot, talkTicks, voiceFile, voiceTicks,
+  BARK_RANGE, BARK_RESET_RANGE, FACE_HEIGHT, FADE_TICKS, RECRUIT_SCENE, SCENE_PAUSE_RANGE, STARTING_GOLD, TALK_ANIMATION, TALK_RANGE, TALK_RESET_RANGE, TAVERN_SCENE, WANDERERS, choiceStates, countTakes, directShot, objectiveSpot, fadeAlpha, fillLine, framing, gestureOf, hasNews, lineTicks, listenerOf, meets, openingOf, recordingFile, recruitOutcome, sceneFraming, seenFlag, shotFace, talkSpot, talkTicks, voiceFile, voiceTicks,
 } from "./dialogue";
 import { QUEST_SITES } from "./quests";
 import { faceHeight, gestureFor, talkAnimation, voiceCandidates } from "./units";
@@ -45,7 +46,7 @@ import {
   canLearn, dragYaw, nextSkill, occludes, offset, percentOf, rankText, vanguardSlot,
 } from "./rules";
 import {
-  SEATS, CAMERA_PERIOD, OCCLUSION_PERIOD, STANCE_PERIOD, ARRANGE_DELAY, HUD_PERIOD, CAPTURE_PERIOD, INCOME_PERIOD, MOVE_EVERY_TICKS, DEAD_LIFE, SKILL_KEYS, SHAKE_MAGNITUDE, SHAKE_VELOCITY, SWING_SPEED, COUNTER_SPEED, SLASH_MODEL, PARRY_MODEL, BLOCK_MODEL, GUARD_MODEL, GUARD_WALK_SPEED, RECOIL_SPEED, FLOAT_TEXT_SIZE, FLOAT_TEXT_RISE, ATTACK_ABILITY, OUTPOST, ORDER_MOVE, ORDER_SMART, YAW_PREFIX, TAVERN, TURN_SECONDS, GOLD_MINE, CREEPS, ui, RING_TEXTURE, IMAGE_TYPE_SELECTION, TARGET_TINT, NEWS_MODEL, QUEST_ICON_SKIN_KEY, QUEST_ICON_FILE, VOICE_PREFIX, FIGHT_DISTANCE, SITE_RADIUS, CAMP_DISTANCE, CAMP_RADIUS, BARK_TEXT_SIZE, KEY, KEY_CODES, SKILL_KEY_CODES, PICK_KEYS, CAMERA_KEYS,
+  SEATS, CAMERA_PERIOD, OCCLUSION_PERIOD, STANCE_PERIOD, ARRANGE_DELAY, HUD_PERIOD, CAPTURE_PERIOD, INCOME_PERIOD, MOVE_EVERY_TICKS, DEAD_LIFE, SKILL_KEYS, SHAKE_MAGNITUDE, SHAKE_VELOCITY, SWING_SPEED, COUNTER_SPEED, SLASH_MODEL, PARRY_MODEL, BLOCK_MODEL, GUARD_MODEL, GUARD_WALK_SPEED, RECOIL_SPEED, FLOAT_TEXT_SIZE, FLOAT_TEXT_RISE, ATTACK_ABILITY, OUTPOST, ORDER_MOVE, ORDER_SMART, YAW_PREFIX, TAVERN, TURN_SECONDS, GOLD_MINE, CREEPS, ui, RING_TEXTURE, IMAGE_TYPE_SELECTION, TARGET_TINT, NEWS_MODEL, QUEST_ICON_SKIN_KEY, QUEST_ICON_FILE, VOICE_PREFIX, FIGHT_DISTANCE, SITE_RADIUS, CAMP_DISTANCE, CAMP_RADIUS, OBJECTIVE_RADIUS, OBJECTIVE_ICON_SKIN_KEY, OBJECTIVE_ICON_FILE, OBJECTIVE_PING_SECONDS, BARK_TEXT_SIZE, KEY, KEY_CODES, SKILL_KEY_CODES, PICK_KEYS, CAMERA_KEYS,
 } from "./constants";
 
 
@@ -195,6 +196,8 @@ interface RpsState {
   /** Units a scene raised or turned, by "seat:tag"; the bounties waiting on them; and turned units still dazed, until a tick. */
   tagged?: Map<string, unit[]> | undefined;
   bounties?: { readonly seat: number; readonly key: string; readonly bounty: Bounty }[] | undefined;
+  /** Each quest objective marked on a player's minimap, by "seat:tag", until every unit under the tag has fallen. */
+  objectives?: { readonly key: string; readonly icon: minimapicon }[] | undefined;
   held?: { readonly unit: unit; readonly until: number; readonly seat: number }[] | undefined;
   /** NPCs and companies fighting on a hero's side, until the fight under their key is won, and the post they go back to. */
   allies?: { readonly unit: unit; readonly key: string; readonly post: Point }[] | undefined;
@@ -1114,6 +1117,7 @@ function hudTick(): void {
       life, maxLife, lifePercent: percentOf(life, maxLife),
       manaPercent: percentOf(GetUnitState(hero, UNIT_STATE_MANA), GetUnitState(hero, UNIT_STATE_MAX_MANA)),
       slots: seat.heroInfo.skills.map((skill, index) => slotView(seat, skill, index, ranks, level, points)),
+      quests: journalText(activeQuests(flagsOf(seat))),
     });
   }
 }
@@ -1695,25 +1699,62 @@ function applyEffect(seat: Seat, run: SceneRun, effect: Effect): void {
     for (const unit of units) run.turns.push({ unit, tag: effect.tag, hold: effect.hold ?? 0 });
     if (effect.bounty !== undefined) addBounty(seat, effect.tag, effect.bounty);
   } else {
-    // Behind the hero, up the road; around the NPC's site; or at a camp past it, away from the map's center.
-    // Held until the scene ends.
+    // Behind the hero, up the road; around the NPC's site; or at a camp past it, away from the map's center:
+    // held until the scene ends, then coming for him. At the scene's objective they stand guard there instead.
     const npc = pointOf(run.npc);
     const away = atan2Tenths(hero.y - npc.y, hero.x - npc.x);
     const outward = atan2Tenths(npc.y - state().center.y, npc.x - state().center.x);
     const camp = offset(npc.x, npc.y, outward, CAMP_DISTANCE, 0);
+    const objective = effect.at === "objective" ? objectivePoint(run.scene) : undefined;
     for (let index = 0; index < effect.count; index++) {
       const around = floorDiv(index * 3600, effect.count);
-      const spot = effect.at === "site" ? offset(npc.x, npc.y, around, SITE_RADIUS, 0)
+      const spot = objective !== undefined ? offset(objective.x, objective.y, around, OBJECTIVE_RADIUS, 0)
+        : effect.at === "site" ? offset(npc.x, npc.y, around, SITE_RADIUS, 0)
         : effect.at === "camp" ? offset(camp.x, camp.y, around, CAMP_RADIUS, 0)
         : offset(hero.x, hero.y, away, FIGHT_DISTANCE, (index * 2 - effect.count + 1) * 90);
       const enemy = CreateUnit(Player(PLAYER_NEUTRAL_AGGRESSIVE), rawcode(effect.code), spot.x, spot.y, atan2Tenths(hero.y - spot.y, hero.x - spot.x) / 10);
-      PauseUnit(enemy, true);
-      run.paused.push(enemy);
-      run.fights.push(enemy);
+      if (objective === undefined) {
+        PauseUnit(enemy, true);
+        run.paused.push(enemy);
+        run.fights.push(enemy);
+      }
       if (effect.tag !== undefined) tagUnit(seat, effect.tag, enemy);
     }
+    if (objective !== undefined && effect.tag !== undefined) markObjective(seat, effect.tag, objective, run.scene.objective?.name ?? "the objective");
     if (effect.tag !== undefined && effect.bounty !== undefined) addBounty(seat, effect.tag, effect.bounty);
   }
+}
+
+/** Where a scene's objective stands on this map (`objectiveSpot`), or undefined for a scene without one. */
+function objectivePoint(scene: Scene): Point | undefined {
+  if (scene.objective === undefined) return undefined;
+  const area = bj_mapInitialPlayableArea;
+  return objectiveSpot(state().center, scene.objective, {
+    minX: Math.floor(GetRectMinX(area)), minY: Math.floor(GetRectMinY(area)), maxX: Math.floor(GetRectMaxX(area)), maxY: Math.floor(GetRectMaxY(area)),
+  });
+}
+
+/**
+ * Marks a quest's objective on this player's minimap, once per tag: Warcraft's
+ * quest objective icon, which every client makes and only he sees, a ping
+ * there on his minimap, and a message naming the place. `questTick` takes the
+ * icon down once every unit under the tag has fallen.
+ */
+function markObjective(seat: Seat, tag: string, spot: Point, name: string): void {
+  const rps = state();
+  const marks = rps.objectives ?? [];
+  rps.objectives = marks;
+  const key = `${seat.id}:${tag}`;
+  if (marks.some((mark) => mark.key === key)) return;
+  const skinned = SkinManagerGetLocalPath(OBJECTIVE_ICON_SKIN_KEY);
+  const icon = CreateMinimapIcon(spot.x, spot.y, 255, 220, 0, skinned === "" ? OBJECTIVE_ICON_FILE : skinned, FOG_OF_WAR_MASKED);
+  SetMinimapIconVisible(icon, false);
+  if (isLocal(seat)) {
+    SetMinimapIconVisible(icon, true);
+    PingMinimapEx(spot.x, spot.y, OBJECTIVE_PING_SECONDS, 255, 220, 0, false);
+  }
+  marks.push({ key, icon });
+  say(seat, `${name.charAt(0).toUpperCase()}${name.slice(1)} is marked on your map.`);
 }
 
 /** Files a unit a scene raised or turned under its tag, for this player. */
@@ -1762,6 +1803,12 @@ function questTick(): void {
     if (!won(entry.key)) return true;
     SetUnitOwner(entry.unit, Player(PLAYER_NEUTRAL_PASSIVE), false);
     IssuePointOrder(entry.unit, "move", entry.post.x, entry.post.y);
+    return false;
+  });
+  const objectives = rps.objectives ?? [];
+  rps.objectives = objectives.filter((mark) => {
+    if (!won(mark.key)) return true;
+    DestroyMinimapIcon(mark.icon);
     return false;
   });
   const bounties = rps.bounties ?? [];
@@ -1924,12 +1971,14 @@ function finishScene(seat: Seat, run: SceneRun): void {
   for (const enemy of run.fights) IssueTargetOrder(enemy, "attack", seat.hero);
   // Those the scene turned join the hostile creeps, can be hurt, and come for the hero, dazed a while first if held.
   // Those who promised to help join the hero's side, can't be hurt, and go at the enemy; `questTick` sends them home after.
+  // With an objective, they set out for it; without, they go at the hero's foes where he stands.
+  const rally = run.allies.length > 0 ? objectivePoint(run.scene) ?? pointOf(seat.hero) : undefined;
   for (const ally of run.allies) {
     const allies = state().allies ?? [];
     allies.push({ unit: ally.unit, key: `${seat.id}:${ally.tag}`, post: pointOf(ally.unit) });
     state().allies = allies;
     SetUnitOwner(ally.unit, seat.player, false);
-    IssuePointOrder(ally.unit, "attack", GetUnitX(seat.hero), GetUnitY(seat.hero));
+    if (rally !== undefined) IssuePointOrder(ally.unit, "attack", rally.x, rally.y);
   }
   for (const turn of run.turns) {
     SetUnitInvulnerable(turn.unit, false);

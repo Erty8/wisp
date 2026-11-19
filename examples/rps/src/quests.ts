@@ -25,11 +25,12 @@ export const CONTAINMENT_SCENE: Scene = {
     { when: [{ flag: "sealingWards" }], start: "hurry" },
   ],
   bark: { text: "You! With the swords! I need you, now!", mood: "command" },
+  objective: { name: "the ley-line rift", angle: 450, distance: 3800 },
   nodes: [
-    { id: "plea", speaker: "npc", mood: "neutral", text: "The containment wards are failing. The elementals Dalaran locked in here are breaking loose.", next: "stakes" },
+    { id: "plea", speaker: "npc", mood: "neutral", text: "The containment wards are failing. The elementals Dalaran locked in here have broken loose to the ley-line rift.", next: "stakes" },
     {
       id: "stakes", speaker: "npc", mood: "angry", shot: "CLOSEUP", important: true,
-      text: "Hold them off while I re-channel the runes, or they walk out into the countryside.",
+      text: "Put them down at the rift while I re-channel the runes, or they walk out into the countryside.",
       choices: [
         { text: "Seal the wards. We'll hold the constructs.", next: "seal" },
         { text: "Those cores are worth a fortune. I'll take them.", next: "harvest" },
@@ -37,19 +38,19 @@ export const CONTAINMENT_SCENE: Scene = {
       ],
     },
     {
-      id: "seal", speaker: "hero", mood: "confirm", text: "Start channelling. We'll handle the constructs.",
+      id: "seal", speaker: "hero", mood: "confirm", text: "Start channelling. We'll handle the constructs at the rift.",
       effects: [
         { kind: "flag", flag: "sealingWards" },
         { kind: "ally", tag: "wards" },
-        { kind: "fight", code: "hwat", count: 2, at: "site", tag: "wards", bounty: { gold: 80, flag: "wardsSealed", text: "The wards hold. Seris pays you 80 gold." } },
-        { kind: "fight", code: "hwt3", count: 1, at: "site", tag: "wards" },
+        { kind: "fight", code: "hwat", count: 2, at: "objective", tag: "wards", bounty: { gold: 80, flag: "wardsSealed", text: "The wards hold. Seris pays you 80 gold." } },
+        { kind: "fight", code: "hwt3", count: 1, at: "objective", tag: "wards" },
       ],
     },
     {
       id: "harvest", speaker: "npc", mood: "angry", shot: "CLOSEUP", text: "Fool! Those cores could level a city. I won't let you!",
       effects: [
         { kind: "flag", flag: "harvestedCores" },
-        { kind: "fight", code: "hwat", count: 2, at: "site", tag: "cores", bounty: { gold: 140, text: "You shatter the constructs and pry out their cores: 140 gold in arcane relics." } },
+        { kind: "fight", code: "hwat", count: 2, at: "objective", tag: "cores", bounty: { gold: 140, flag: "coresTaken", text: "You shatter the constructs and pry out their cores: 140 gold in arcane relics." } },
         { kind: "hostile", tag: "cores" },
       ],
     },
@@ -88,6 +89,7 @@ export const GATE_SCENE: Scene = {
     {
       id: "force", speaker: "npc", mood: "angry", text: "So be it. Shields up, men!",
       effects: [
+        { kind: "flag", flag: "gateForced" },
         { kind: "hostile", code: "hfoo", tag: "gate", bounty: { gold: 60, flag: "gateSettled", text: "The blockade breaks. The exiles press 60 gold into your hands." } },
         { kind: "hostile", tag: "gate" },
         { kind: "ally", code: "hspt", tag: "gate" },
@@ -96,6 +98,7 @@ export const GATE_SCENE: Scene = {
     {
       id: "enforce", speaker: "npc", mood: "confirm", text: "Good. Help us push them back where they belong.",
       effects: [
+        { kind: "flag", flag: "gateEnforced" },
         { kind: "hostile", code: "hspt", tag: "exiles", bounty: { gold: 80, flag: "gateSettled", text: "The exiles flee into the wilds. Haldric pays you 80 gold." } },
         { kind: "ally", tag: "exiles" },
         { kind: "ally", code: "hfoo", tag: "exiles" },
@@ -126,6 +129,7 @@ export const TIMBERLAND_SCENE: Scene = {
     { when: [{ flag: "campAssault" }], start: "waiting" },
   ],
   bark: { text: "Help! The mill needs swords, not saws!", mood: "question" },
+  objective: { name: "the troll ridge", angle: 2250, distance: 3800 },
   nodes: [
     { id: "greet", speaker: "npc", mood: "neutral", shot: "OTS", text: "Trolls. Amani trolls, out of the deep woods. They burned the north stacks and took the road.", next: "camp" },
     { id: "camp", speaker: "npc", mood: "question", text: "Their camp's on the ridge past the mill. Hit them in daylight, or wait for dark?", next: "sergeant" },
@@ -142,18 +146,18 @@ export const TIMBERLAND_SCENE: Scene = {
       id: "day", speaker: "hero", mood: "command", text: "Form up. We hit them now.",
       effects: [
         { kind: "flag", flag: "campAssault" },
-        { kind: "fight", code: "nftr", count: 3, at: "camp", tag: "camp", bounty: { gold: 100, flag: "campCleared", text: "The troll camp burns. Gregor pays 100 gold from the mill's strongbox." } },
-        { kind: "fight", code: "nfsp", count: 2, at: "camp", tag: "camp" },
-        { kind: "fight", code: "nftk", count: 1, at: "camp", tag: "camp" },
+        { kind: "fight", code: "nftr", count: 3, at: "objective", tag: "camp", bounty: { gold: 100, flag: "campCleared", text: "The troll camp burns. Gregor pays 100 gold from the mill's strongbox." } },
+        { kind: "fight", code: "nfsp", count: 2, at: "objective", tag: "camp" },
+        { kind: "fight", code: "nftk", count: 1, at: "objective", tag: "camp" },
       ],
     },
     {
       id: "night", speaker: "hero", mood: "command", text: "We wait for dark, then take the chieftain while the rest sleep.",
       effects: [
         { kind: "flag", flag: "campAssault" },
-        { kind: "fight", code: "nftr", count: 1, at: "camp", tag: "camp", bounty: { gold: 100, flag: "campCleared", text: "The chieftain is dead and the camp scattered. Gregor pays 100 gold." } },
-        { kind: "fight", code: "nfsp", count: 1, at: "camp", tag: "camp" },
-        { kind: "fight", code: "nftk", count: 1, at: "camp", tag: "camp" },
+        { kind: "fight", code: "nftr", count: 1, at: "objective", tag: "camp", bounty: { gold: 100, flag: "campCleared", text: "The chieftain is dead and the camp scattered. Gregor pays 100 gold." } },
+        { kind: "fight", code: "nfsp", count: 1, at: "objective", tag: "camp" },
+        { kind: "fight", code: "nftk", count: 1, at: "objective", tag: "camp" },
       ],
     },
     { id: "later", speaker: "hero", mood: "neutral", text: "Later. We're not ready." },
@@ -188,11 +192,12 @@ export const OGRE_SCENE: Scene = {
     },
     {
       id: "duel", speaker: "npc", mood: "angry", important: true, text: "Gorm fight alone! Bruisers, go sit!",
-      effects: [{ kind: "hostile", tag: "ogre", bounty: { gold: 120, flag: "ogreBeaten", text: "The ogre falls. His hoard of shinies holds 120 gold." } }],
+      effects: [{ kind: "flag", flag: "ogreFight" }, { kind: "hostile", tag: "ogre", bounty: { gold: 120, flag: "ogreBeaten", text: "The ogre falls. His hoard of shinies holds 120 gold." } }],
     },
     {
       id: "split", speaker: "npc", mood: "question", text: "Gorm get more! ...No, GRUM get more! Gorm always get more!",
       effects: [
+        { kind: "flag", flag: "ogreFight" },
         { kind: "hostile", tag: "ogre", hold: 4, bounty: { gold: 120, flag: "ogreBeaten", text: "The quarry is yours. The ogres' hoard holds 120 gold." } },
         { kind: "hostile", code: "nogr", tag: "ogre", hold: 4 },
       ],
@@ -200,6 +205,7 @@ export const OGRE_SCENE: Scene = {
     {
       id: "ambush", speaker: "hero", mood: "attack", text: "Enough talk!",
       effects: [
+        { kind: "flag", flag: "ogreFight" },
         { kind: "hostile", tag: "ogre", bounty: { gold: 120, flag: "ogreBeaten", text: "The quarry is yours. The ogres' hoard holds 120 gold." } },
         { kind: "hostile", code: "nogr", tag: "ogre" },
       ],

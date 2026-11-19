@@ -6,7 +6,7 @@
 // Every client creates and fills every player's HUD the same way; the caller
 // shows each player only their own.
 import { f32 } from "wisp/src/sim/f32";
-import { type Box, LIFE_BAR, MANA_BAR, SPELL_SLOTS, learnButton, spellSlot } from "./layout";
+import { type Box, LIFE_BAR, MANA_BAR, QUEST_LOG, SPELL_SLOTS, learnButton, spellSlot } from "./layout";
 import { barWidth } from "./rules";
 
 /** Screen units (the 0.8 by 0.6 frame space) from thousandths. */
@@ -34,6 +34,8 @@ export interface Hud {
   readonly lifeText: framehandle;
   readonly mana: framehandle;
   readonly slots: readonly SlotFrames[];
+  /** The quest journal's text, at the right under the minimap. */
+  readonly quests: framehandle;
 }
 
 /** One slot as the bar shows it. */
@@ -53,6 +55,8 @@ export interface HudView {
   readonly lifePercent: number;
   readonly manaPercent: number;
   readonly slots: readonly SlotView[];
+  /** The quest journal (`journalText`), "" with no quest under way. */
+  readonly quests: string;
 }
 
 export type HudAction = { readonly kind: "cast" | "learn"; readonly slot: number };
@@ -103,7 +107,8 @@ export function createHud(context: number, clicks: trigger): Hud {
     const learn = backdrop(root, context, LEARN_ICON, learnBox);
     slots.push({ icon, button: slotButton, key, rank, cooldown, learn, learnButton: button(root, context, learnBox, clicks) });
   }
-  return { root, life, lifeText, mana, slots };
+  const quests = text(root, context, QUEST_LOG, TEXT_JUSTIFY_TOP, TEXT_JUSTIFY_LEFT);
+  return { root, life, lifeText, mana, slots, quests };
 }
 
 /** What a clicked frame (by handle id) asks for: casting a slot's skill or learning it. */
@@ -121,6 +126,7 @@ export function showHud(hud: Hud, view: HudView): void {
   BlzFrameSetSize(hud.life, ui(barWidth(view.lifePercent, LIFE_BAR.width)), ui(LIFE_BAR.height));
   BlzFrameSetText(hud.lifeText, `${view.life} / ${view.maxLife}`);
   BlzFrameSetSize(hud.mana, ui(barWidth(view.manaPercent, MANA_BAR.width)), ui(MANA_BAR.height));
+  BlzFrameSetText(hud.quests, view.quests);
   hud.slots.forEach((frames, index) => {
     const slot = view.slots[index];
     if (slot === undefined) return;

@@ -46,8 +46,13 @@ export type Effect =
   | { readonly kind: "spawn"; readonly code: string; readonly count: number; readonly role: Role }
   | {
     readonly kind: "fight"; readonly code: string; readonly count: number;
-    /** Where they come from: behind the hero (the default), around the NPC's site, or a camp 900 past it, away from the map's center. */
-    readonly at?: "behind" | "site" | "camp";
+    /**
+     * Where they come from: behind the hero (the default), around the NPC's
+     * site, or a camp 900 past it, away from the map's center, all coming for
+     * the hero as the scene ends; or at the scene's `objective`, marked on the
+     * player's minimap, where they stand guard until he comes.
+     */
+    readonly at?: "behind" | "site" | "camp" | "objective";
     readonly tag?: string;
     readonly bounty?: Bounty;
   }
@@ -114,6 +119,39 @@ export interface Scene {
   /** What the NPC calls out to a hero walking past, and its mood. */
   readonly bark?: { readonly text: string; readonly mood: Mood };
   readonly nodes: readonly DialogueNode[];
+  /** Where the scene's `objective` fights wait, away from the NPC. */
+  readonly objective?: Objective;
+}
+
+/**
+ * A quest's objective: a named place, by angle (tenths of a degree from east)
+ * and distance from the playable area's center, like the NPCs' own spots.
+ */
+export interface Objective {
+  readonly name: string;
+  readonly angle: number;
+  readonly distance: number;
+}
+
+/** The playable area, for keeping an objective inside it. */
+export interface Bounds {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+/** How far inside the playable area's edge an objective stays. */
+export const OBJECTIVE_MARGIN = 600;
+
+/** Where an objective stands: its angle and distance from the center, pulled in to OBJECTIVE_MARGIN inside the playable area. */
+export function objectiveSpot(center: Point, objective: Objective, bounds: Bounds): Point {
+  const spot = offset(center.x, center.y, objective.angle, objective.distance, 0);
+  const clamp = (value: number, low: number, high: number) => (low > high ? floorDiv(low + high, 2) : Math.max(low, Math.min(high, value)));
+  return {
+    x: clamp(spot.x, bounds.minX + OBJECTIVE_MARGIN, bounds.maxX - OBJECTIVE_MARGIN),
+    y: clamp(spot.y, bounds.minY + OBJECTIVE_MARGIN, bounds.maxY - OBJECTIVE_MARGIN),
+  };
 }
 
 
@@ -256,6 +294,10 @@ export function sceneProblems(scene: Scene): string[] {
     if (node.next !== undefined && !ids.has(node.next)) problems.push(`${scene.name}: ${node.id} goes to no node ${node.next}`);
     for (const choice of node.choices ?? []) if (!ids.has(choice.next)) problems.push(`${scene.name}: ${node.id} offers no node ${choice.next}`);
     if ((node.choices?.length ?? 0) > 4) problems.push(`${scene.name}: ${node.id} offers more than 4 choices`);
+    for (const effect of node.effects ?? []) {
+      if (effect.kind === "fight" && effect.at === "objective" && scene.objective === undefined) problems.push(`${scene.name}: ${node.id} fights at an objective the scene doesn't name`);
+      if (effect.kind === "fight" && effect.at === "objective" && effect.tag === undefined) problems.push(`${scene.name}: ${node.id} fights at the objective without a tag to mark it by`);
+    }
   }
   return problems;
 }
@@ -519,8 +561,10 @@ export const MERCENARY_SCENE: Scene = {
   start: "offer",
   openings: [
     { when: [{ flag: "gormakPaid" }], start: "done" },
-    { when: [{ flag: "provedToGormak" }], start: "respect" },
+    { when: [{ flag: "pupsBeaten" }], start: "respect" },
+    { when: [{ flag: "provedToGormak" }], start: "waiting" },
   ],
+  objective: { name: "the gnoll den", angle: 1350, distance: 3200 },
   bark: { text: "Strong arms for hire! Coin or blood, {hero}.", mood: "warcry" },
   nodes: [
     {
@@ -536,13 +580,17 @@ export const MERCENARY_SCENE: Scene = {
       effects: [{ kind: "gold", amount: -90 }, { kind: "spawn", code: "nftr", count: 2, role: "ranged" }, { kind: "flag", flag: "gormakPaid" }],
     },
     {
-      id: "prove", speaker: "npc", mood: "warcry", important: true, text: "Ha! Then beat my pups. Put them down and come back to me.",
-      effects: [{ kind: "fight", code: "ngno", count: 2 }, { kind: "flag", flag: "provedToGormak" }],
+      id: "prove", speaker: "npc", mood: "warcry", important: true, text: "Ha! Then beat my pups. They're at the gnoll den. Put them down and come back to me.",
+      effects: [
+        { kind: "fight", code: "ngno", count: 2, at: "objective", tag: "pups", bounty: { gold: 0, flag: "pupsBeaten", text: "Gor'mak's pups are down. Go back to him." } },
+        { kind: "flag", flag: "provedToGormak" },
+      ],
     },
     {
       id: "respect", speaker: "npc", mood: "confirm", text: "You fight like an orc. The trolls follow you, no charge.",
       effects: [{ kind: "spawn", code: "nftr", count: 2, role: "ranged" }, { kind: "flag", flag: "gormakPaid" }],
     },
+    { id: "waiting", speaker: "npc", mood: "angry", text: "My pups still stand at the den. Come back when they don't." },
     { id: "done", speaker: "npc", mood: "neutral", text: "Treat my trolls well, {hero}." },
     { id: "leave", speaker: "hero", mood: "neutral", text: "Not today." },
   ],
