@@ -8,7 +8,7 @@ import { farmTest } from "wisp/scripts/wisp/farmTest";
 
 const rps = join(import.meta.dir, "..");
 
-farmTest("both players recruit from their quartermaster, down different choices, pick a race and hero by keys and clicks, learn and cast from the spell bar, swing and guard with the mouse and keys, walk, target, attack, switch stances, try their spells, walk with A and switch cameras, and take a hot reload, with the same native calls in both clients", () => {
+farmTest("both players recruit from their quartermaster, down different choices, pick their race's heroes and a hero by keys and clicks, learn and cast from the spell bar, swing and guard with the mouse and keys, walk, target, attack, switch stances, try their spells, walk with A and switch cameras, and take a hot reload, with the same native calls in both clients", () => {
   expect(report(mapCompiler(join(rps, "tsconfig.map.json"))())).toBe("");
   expect(report(mapCompiler(join(rps, "tsconfig.headless.json"))())).toBe("");
   const run = Bun.spawnSync([

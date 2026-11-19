@@ -34,11 +34,11 @@ import { type Npc, type SceneSeat, type SceneState, flagsOf, goldOf, installScen
 import { chooseLine, endScene, fadeTick, playNearest, sceneTick, skipLine, startScene, talkCheck, talkTarget, voiceSynced } from "./scenes";
 import { questTick } from "./questRuntime";
 import { KILL_CAM_RANGE, KILL_CAM_TICKS, SLOW_MOTION_RADIUS, SLOW_MOTION_SCALE, endsFight, killCamShot } from "./killcam";
-import { type Hero, type Race, type Skill, DEFAULT_PICK, PICK_SECONDS, RACES, disabledIcon, heroOf, icon, raceOf, rawcode } from "./roster";
+import { type Hero, type Race, type Skill, DEFAULT_PICK, HERO_LISTS, PICK_SECONDS, disabledIcon, heroList, heroListNames, heroOf, icon, raceOf, rawcode } from "./roster";
 import {
-  AUTO_TARGET_RANGE, BLOCK_MANA, CLICK_SETTLE_TICKS, FINISHER_KNOCKBACK, SHOT_RADIUS, SHOT_RANGE, SHOT_SPEED, GUARD_POSE_TICKS, GUARD_SPEED_DENOMINATOR, GUARD_SPEED_NUMERATOR, HIT_STOP_TICKS, IMPACT_TICKS,
+  AUTO_TARGET_RANGE, BLOCK_MANA, CLICK_SETTLE_TICKS, FINISHER_KNOCKBACK, GUARD_POSE_TICKS, GUARD_SPEED_DENOMINATOR, GUARD_SPEED_NUMERATOR, HIT_STOP_TICKS, IMPACT_TICKS,
   PARRY_COUNTER_DAMAGE, PARRY_KNOCKBACK, RECOIL_TICKS, STAGGER_TICKS, SWING_HALF_ANGLE, SWING_RANGE, bufferable, canAct, stepIn, swingTicks,
-  atan2Tenths, attackFacing, autoTarget, ringCorner, ringSize, blockedDamage, guardOutcome, inCone, isSpellBarClick, nextComboStep, shotHit, swingDamage,
+  atan2Tenths, attackFacing, autoTarget, ringCorner, ringSize, blockedDamage, guardOutcome, inCone, isSpellBarClick, nextComboStep, swingDamage,
 } from "./combat";
 import {
   type Candidate, type Point, type Role, type SkillRanks, type Stance, type Yaw,
@@ -65,19 +65,6 @@ interface Swing {
   landed: boolean;
 }
 
-/** A ranged hero's shot in flight: its missile, where it is, its heading (tenths of a degree), how far it has flown and its damage. */
-interface Shot {
-  readonly effect: effect;
-  x: number;
-  y: number;
-  readonly facing: number;
-  travelled: number;
-  readonly damage: number;
-}
-
-/** A shot's missile flies this high above the ground it was fired from. */
-const SHOT_HEIGHT = 60.0;
-
 /** The hero's manual combat state, all in camera ticks (0.03 s). */
 interface Fight {
   swing: Swing | undefined;
@@ -97,8 +84,6 @@ interface Fight {
   pending: { readonly click: Point | undefined; readonly tick: number } | undefined;
   /** The tick of the player's last spell bar click. */
   barTick: number;
-  /** A ranged hero's shots in flight. */
-  shots: Shot[];
   /** A swing pressed while one is recovering: it starts the moment that one ends. */
   buffered: { readonly click: Point | undefined } | undefined;
   /** How many ticks into a swing the damage lands: IMPACT_TICKS, or what -impact set for this model. */
@@ -171,6 +156,8 @@ interface RpsState extends SceneState {
   off?: Set<string> | undefined;
   /** While a parry's counter-slash deals its damage, so it isn't parried in turn. */
   countering?: boolean | undefined;
+  /** While a swing or a counter-slash deals its damage, so it doesn't shake the camera. */
+  meleeHit?: boolean | undefined;
   /** Units in a kill cam's slow motion, each with the speed it would play at without it, and the tick it ends. */
   slowed?: Map<unit, number> | undefined;
   slowUntil?: number | undefined;
@@ -180,7 +167,10 @@ interface RpsState extends SceneState {
 interface Pick {
   readonly id: number;
   readonly player: player;
-  race: number | undefined;
+  /** The race the player chose in Warcraft's lobby (`gameRace`), as an index into RACES. */
+  readonly race: number;
+  /** The hero list he is looking at (`heroList`: his race's, or a page of the tavern's), once he has chosen one. */
+  list: number | undefined;
   done: boolean;
   readonly menu: Picker;
 }
@@ -248,7 +238,7 @@ function cameraOf(seat: Seat): CameraPreset {
  * The local player's right-mouse drag: while the button is held, the pointer's
  * sideways movement turns this client's camera at once (`dragYaw`, a full
  * screen a full turn), and every 3 ticks the new yaw is sent to every client
- * (`BlzSendSyncData`), where it becomes the yaw WASD and the shots go by. Only
+ * (`BlzSendSyncData`), where it becomes the yaw WASD goes by. Only
  * the drag sends anything; the pointer itself is read on this client alone.
  */
 function dragTick(seat: Seat): void {
@@ -276,7 +266,7 @@ function dragTick(seat: Seat): void {
   }
 }
 
-/** A player's dragged yaw reaches every client: it is what WASD, shots and the tree check turn by. */
+/** A player's dragged yaw reaches every client: it is what WASD and the tree check turn by. */
 function yawSynced(): void {
   const seat = seatOf(GetTriggerPlayer());
   if (seat === undefined) return;
@@ -466,7 +456,8 @@ function shake(seat: Seat): void {
  * Damage puts the squad that dealt or took it in combat. The camera shakes on
  * impact: a siege hit landing within 500 of the hero, or the hero's own spell
  * damage (Storm Bolt, Thunder Clap) landing, which stands in for a critical
- * strike, since the Mountain King has none.
+ * strike, since the Mountain King has none. His own melee (a swing or a
+ * counter-slash, `meleeHit`) never shakes it.
  */
 function damaged(): void {
   const victim = GetTriggerUnit();
@@ -475,11 +466,13 @@ function damaged(): void {
   const spell = !BlzGetEventIsAttack();
   for (const seat of state().seats) {
     if (victim === seat.hero && seat.fight.guardTick !== undefined) guardHit(seat, source);
-    if (victim === seat.hero && !moving(seat) && seat.fight.swing === undefined && seat.scene === undefined) IssueImmediateOrder(seat.hero, "holdposition");
+    // A melee hero has no attack, so he would run from whatever hits him: he holds his ground. A ranged hero keeps
+    // his attack, and holding would cancel it.
+    if (victim === seat.hero && seat.heroInfo.ranged !== true && !moving(seat) && seat.fight.swing === undefined && seat.scene === undefined) IssueImmediateOrder(seat.hero, "holdposition");
     const ours = (target: unit) => target === seat.hero || seat.squad.some((member) => member.unit === target);
     if (ours(victim) || ours(source)) seat.combatMs = combatAfter(seat.combatMs, 0, true);
     const near = distanceSquared(pointOf(victim), pointOf(seat.hero)) <= SHAKE_RANGE * SHAKE_RANGE;
-    if ((siege && near) || (spell && source === seat.hero)) shake(seat);
+    if (state().meleeHit !== true && ((siege && near) || (spell && source === seat.hero))) shake(seat);
   }
 }
 
@@ -518,6 +511,7 @@ function startSwing(seat: Seat, click: Point | undefined): void {
     return;
   }
   if (fight.guardTick !== undefined || !alive(hero) || !canAct(now(), fight.staggerUntil)) return;
+  if (seat.heroInfo.ranged === true) return rangedAttack(seat);
   const tick = now();
   const step = nextComboStep(fight.step, fight.recoverTick, tick);
   const from = pointOf(hero);
@@ -533,17 +527,29 @@ function startSwing(seat: Seat, click: Point | undefined): void {
   IssueImmediateOrder(hero, "holdposition");
   // Reach correction: a melee hero steps in toward a target just out of reach,
   // stopping short of it, rather than swinging at air.
-  const closer = seat.heroInfo.missile === undefined ? stepIn(from, target, facing) : undefined;
+  const closer = stepIn(from, target, facing);
   if (closer !== undefined) shove(hero, closer);
   timeScale(hero, SWING_SPEED);
   swingAnimation(seat, step);
+}
+
+/**
+ * A ranged hero's click or Space: Warcraft's own attack at his soft target,
+ * with his own missile, range and cooldown; he closes in if it is out of
+ * range. Without a target he holds his ground, where Warcraft's attack still
+ * fires at enemies that come into range.
+ */
+function rangedAttack(seat: Seat): void {
+  const { target, hero } = seat;
+  if (target === undefined || !alive(target)) return;
+  IssueTargetOrder(hero, "attack", target);
+  seat.combatMs = combatAfter(seat.combatMs, 0, true);
 }
 
 /** The swing's damage lands on every enemy in its cone; hit units and the hero freeze for a moment, and the finisher knocks them back. */
 function landSwing(seat: Seat, swing: Swing): void {
   const { hero, fight } = seat;
   swing.landed = true;
-  if (seat.heroInfo.missile !== undefined) return fireShot(seat, swing, seat.heroInfo.missile);
   const origin = pointOf(hero);
   const hits: unit[] = [];
   for (const other of unitsInRange(origin.x, origin.y, SWING_RANGE + 50)) {
@@ -552,7 +558,9 @@ function landSwing(seat: Seat, swing: Swing): void {
   }
   if (hits.length === 0) return;
   for (const target of hits) {
+    state().meleeHit = true;
     UnitDamageTarget(hero, target, swingDamage(swing.step), true, false, ATTACK_TYPE_HERO, DAMAGE_TYPE_NORMAL, WEAPON_TYPE_METAL_HEAVY_SLICE);
+    state().meleeHit = false;
     DestroyEffect(AddSpecialEffectTarget(SLASH_MODEL, target, "chest"));
     if (swing.step === 3) {
       const at = pointOf(target);
@@ -564,43 +572,6 @@ function landSwing(seat: Seat, swing: Swing): void {
   fight.frozen = [hero, ...hits];
   fight.thawTick = now() + HIT_STOP_TICKS;
   for (const target of fight.frozen) timeScale(target, 0);
-}
-
-/** A ranged hero's swing fires his missile along the aim, from his position, as an effect the camera tick moves. */
-function fireShot(seat: Seat, swing: Swing, missile: string): void {
-  const from = pointOf(seat.hero);
-  const effect = AddSpecialEffect(missile, from.x, from.y);
-  BlzSetSpecialEffectHeight(effect, SHOT_HEIGHT);
-  BlzSetSpecialEffectYaw(effect, swing.facing * Math.PI / 1800);
-  seat.fight.shots.push({ effect, x: from.x, y: from.y, facing: swing.facing, travelled: 0, damage: swingDamage(swing.step) });
-}
-
-/**
- * Every camera tick each shot flies SHOT_SPEED further; it hits the nearest
- * enemy within SHOT_RADIUS of where it lands (damage, and its missile's death
- * as the impact), or fades once it has flown SHOT_RANGE.
- */
-function moveShots(seat: Seat): void {
-  const { fight, hero } = seat;
-  const flying: Shot[] = [];
-  for (const shot of fight.shots) {
-    const next = offset(shot.x, shot.y, shot.facing, SHOT_SPEED, 0);
-    shot.x = next.x;
-    shot.y = next.y;
-    shot.travelled += SHOT_SPEED;
-    BlzSetSpecialEffectX(shot.effect, next.x);
-    BlzSetSpecialEffectY(shot.effect, next.y);
-    const enemies = unitsInRange(next.x, next.y, SHOT_RADIUS + 40).filter((other) => alive(other) && IsUnitEnemy(other, seat.player));
-    const hit = shotHit(next, enemies.map((other) => pointOf(other)));
-    const victim = hit === undefined ? undefined : enemies[hit];
-    if (victim !== undefined) {
-      UnitDamageTarget(hero, victim, shot.damage, true, true, ATTACK_TYPE_HERO, DAMAGE_TYPE_NORMAL, WEAPON_TYPE_WHOKNOWS);
-      seat.combatMs = combatAfter(seat.combatMs, 0, true);
-      DestroyEffect(shot.effect);
-    } else if (shot.travelled >= SHOT_RANGE) DestroyEffect(shot.effect);
-    else flying.push(shot);
-  }
-  fight.shots = flying;
 }
 
 /** Raises the guard: the hero stops, takes up the attack pose, which freezes GUARD_POSE_TICKS later, and slows to 3/5 speed. */
@@ -710,7 +681,9 @@ function guardHit(seat: Seat, attacker: unit): void {
     timeScale(attacker, 0);
     // The counter is damage too; a guarding attacker mustn't parry it back into a loop.
     state().countering = true;
+    state().meleeHit = true;
     UnitDamageTarget(hero, attacker, PARRY_COUNTER_DAMAGE, true, false, ATTACK_TYPE_HERO, DAMAGE_TYPE_NORMAL, WEAPON_TYPE_METAL_HEAVY_SLICE);
+    state().meleeHit = false;
     state().countering = false;
   } else if (outcome === "block") {
     // A fifth of the damage, 10 mana, a flash, a slide back and the pose jolted
@@ -738,7 +711,6 @@ function guardHit(seat: Seat, attacker: unit): void {
 function fightTick(seat: Seat, tick: number): void {
   const { fight, hero } = seat;
   const { swing, pending } = fight;
-  if (fight.shots.length > 0) moveShots(seat);
   if (pending !== undefined && tick >= pending.tick + CLICK_SETTLE_TICKS) {
     fight.pending = undefined;
     if (!isSpellBarClick(pending.tick, fight.barTick)) startSwing(seat, pending.click);
@@ -1354,24 +1326,42 @@ function recruit(seat: Seat, role: Role, cost: number): void {
   say(seat, `Two ${name} join you.`);
 }
 
-// Picking: each player chooses a race, then one of its heroes, by click or
-// with 1 to 4 (0 goes back); PICK_SECONDS in, whoever hasn't gets the default.
+// Picking: each player's race is the one he chose in Warcraft's lobby; he
+// chooses his race's heroes or the tavern's, then a hero, by click or with
+// 1 to 4 (0 goes back); PICK_SECONDS in, whoever hasn't gets the first hero
+// of the list he is looking at, or of his race's.
 
 function pickOf(target: player): Pick | undefined {
   const id = GetPlayerId(target);
   return state().picks.find((pick) => pick.id === id && !pick.done);
 }
 
-function showPick(pick: Pick): void {
-  if (pick.race === undefined) showPicker(pick.menu, "Choose your race", RACES.map((race) => race.name), false);
-  else showPicker(pick.menu, `Choose your ${raceOf(pick.race).name} hero`, raceOf(pick.race).heroes.map((hero) => hero.name), true);
+/**
+ * The race a player chose in Warcraft's own lobby, as an index into RACES:
+ * Human, Orc, Night Elf or Undead (a random race is settled before the map
+ * starts). Anything else plays as Human.
+ */
+function gameRace(target: player): number {
+  const race = GetPlayerRace(target);
+  return race === RACE_ORC ? 1 : race === RACE_NIGHTELF ? 2 : race === RACE_UNDEAD ? 3 : 0;
 }
 
-/** A choice (0 to 3) or "back" on a player's picker: a race, then a hero, which spawns them. */
+function showPick(pick: Pick): void {
+  if (pick.list === undefined) showPicker(pick.menu, "Choose your hero", heroListNames(pick.race), false);
+  else showPicker(pick.menu, pick.list === 0 ? `Choose your ${raceOf(pick.race).name} hero` : "Choose a tavern hero", heroList(pick.race, pick.list).map((hero) => hero.name), true);
+}
+
+/** A choice (0 to 3) or "back" on a player's picker: a hero list, then a hero, which spawns them. */
 function choose(pick: Pick, choice: number | "back"): void {
-  if (choice === "back") pick.race = undefined;
-  else if (pick.race === undefined) pick.race = choice;
-  else return finishPick(pick, pick.race, choice);
+  if (choice === "back") pick.list = undefined;
+  else if (pick.list === undefined) {
+    if (choice >= HERO_LISTS) return;
+    pick.list = choice;
+  } else {
+    const hero = heroList(pick.race, pick.list)[choice];
+    if (hero !== undefined) finishPick(pick, hero);
+    return;
+  }
   showPick(pick);
 }
 
@@ -1388,22 +1378,21 @@ function pickKey(target: player, code: number): void {
   else if (PICK_KEYS.includes(code)) choose(pick, PICK_KEYS.indexOf(code));
 }
 
-/** The pick time is up: everyone still choosing gets their race's first hero, or the default. */
+/** The pick time is up: everyone still choosing gets the first hero of the list he is looking at, or of his race's. */
 function pickTimeout(): void {
   for (const pick of state().picks) {
     if (pick.done) continue;
-    if (pick.race === undefined) finishPick(pick, DEFAULT_PICK.race, DEFAULT_PICK.hero);
-    else finishPick(pick, pick.race, 0);
+    finishPick(pick, heroList(pick.race, pick.list ?? 0)[0] ?? heroOf(DEFAULT_PICK.race, DEFAULT_PICK.hero));
   }
 }
 
-/** Spawns the picked hero and the race's army on the player's start location and hands them the interface. */
-function finishPick(pick: Pick, race: number, hero: number): void {
+/** Spawns the picked hero on the player's start location, with his race's army to recruit, and hands them the interface. */
+function finishPick(pick: Pick, hero: Hero): void {
   const rps = state();
   pick.done = true;
   BlzFrameSetVisible(pick.menu.root, false);
   const start = startOf(pick.id);
-  const seat = spawnSeat(pick.id, start.x, start.y, raceOf(race), heroOf(race, hero));
+  const seat = spawnSeat(pick.id, start.x, start.y, raceOf(pick.race), hero);
   rps.seats.push(seat);
   placeQuartermaster(seat, start);
   seat.hud = createHud(seat.id, rps.clicks);
@@ -1642,14 +1631,15 @@ function spawnSeat(id: number, x: number, y: number, race: Race, heroInfo: Hero)
   SetPlayerState(player, PLAYER_STATE_RESOURCE_FOOD_CAP, FOOD_CAP);
   SetPlayerState(player, PLAYER_STATE_FOOD_CAP_CEILING, FOOD_CAP);
   const hero = CreateUnit(player, rawcode(heroInfo.code), x, y, 90.0);
-  // The hero swings only when the player does: no attack ability, so no auto-attack.
-  UnitRemoveAbility(hero, ATTACK_ABILITY);
+  // A melee hero swings only when the player does: no attack ability, so no auto-attack.
+  // A ranged hero keeps Warcraft's own attack (`rangedAttack`).
+  if (heroInfo.ranged !== true) UnitRemoveAbility(hero, ATTACK_ABILITY);
   // The party starts empty: soldiers are recruited from the quartermaster, with the starting gold.
   const squad: Member[] = [];
   SetPlayerState(player, PLAYER_STATE_RESOURCE_GOLD, STARTING_GOLD);
   return {
     id, player, hero, race, heroInfo, squad, keys: { w: false, a: false, s: false, d: false },
-    fight: { swing: undefined, step: 0, recoverTick: 0, guardTick: undefined, poseTick: undefined, frozen: [], thawTick: 0, speed: Math.floor(GetUnitDefaultMoveSpeed(hero)), pending: undefined, barTick: -100, shots: [], buffered: undefined, impactTicks: IMPACT_TICKS, guardPose: undefined, guardEffect: undefined, staggerUntil: 0 },
+    fight: { swing: undefined, step: 0, recoverTick: 0, guardTick: undefined, poseTick: undefined, frozen: [], thawTick: 0, speed: Math.floor(GetUnitDefaultMoveSpeed(hero)), pending: undefined, barTick: -100, buffered: undefined, impactTicks: IMPACT_TICKS, guardPose: undefined, guardEffect: undefined, staggerUntil: 0 },
     yaw: { current: START_YAW, target: START_YAW },
     combatMs: 0, stance: "vanguard", target: undefined, hidden: [], shakeMs: 0, camera: DEFAULT_CAMERA, hud: undefined, letterbox: undefined, scene: undefined, talkedTo: undefined,
   };
@@ -1669,7 +1659,7 @@ export function start(this: void): void {
   for (let id = 0; id < SEATS; id++) {
     const player = Player(id);
     if (GetPlayerSlotState(player) !== PLAYER_SLOT_STATE_PLAYING || GetPlayerController(player) !== MAP_CONTROL_USER) continue;
-    rps.picks.push({ id, player, race: undefined, done: false, menu: createPicker(id, rps.clicks) });
+    rps.picks.push({ id, player, race: gameRace(player), list: undefined, done: false, menu: createPicker(id, rps.clicks) });
     for (const code of KEY_CODES) {
       BlzTriggerRegisterPlayerKeyEvent(pressed, player, ConvertOsKeyType(code), 0, true);
       BlzTriggerRegisterPlayerKeyEvent(released, player, ConvertOsKeyType(code), 0, false);

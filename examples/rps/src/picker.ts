@@ -1,6 +1,6 @@
-// The race and hero picker each player sees at the start of an RPS match: a
-// panel with a title, four choices (the races, then the chosen race's
-// heroes) and a back button, in Warcraft's own dialog buttons. Every client
+// The hero picker each player sees at the start of an RPS match: a panel
+// with a title, up to four choices (his race's heroes or the tavern's, then
+// the heroes of the list he chose) and a back button, in Warcraft's own dialog buttons. Every client
 // creates and fills every player's picker the same way; the caller shows each
 // player only their own and hides it once they have picked.
 import { f32 } from "wisp/src/sim/f32";
@@ -45,10 +45,14 @@ export function createPicker(context: number, clicks: trigger): Picker {
   return { root, title, choices, back };
 }
 
-/** Shows the title, the four choices' labels and whether Back is offered. */
+/** Shows the title, the choices' labels (a choice without one is hidden) and whether Back is offered. */
 export function showPicker(picker: Picker, title: string, labels: readonly string[], back: boolean): void {
   BlzFrameSetText(picker.title, title);
-  picker.choices.forEach((choice, index) => BlzFrameSetText(choice, labels[index] ?? ""));
+  picker.choices.forEach((choice, index) => {
+    const label = labels[index] ?? "";
+    BlzFrameSetText(choice, label);
+    BlzFrameSetVisible(choice, label !== "");
+  });
   BlzFrameSetVisible(picker.back, back);
 }
 

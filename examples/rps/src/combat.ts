@@ -103,24 +103,6 @@ export function isSpellBarClick(mouseTick: number, barTick: number): boolean {
   return Math.abs(mouseTick - barTick) <= CLICK_SETTLE_TICKS;
 }
 
-/** A ranged hero's shot flies 27 a tick (900 a second) for up to 900, and hits the first enemy within 70 of it. */
-export const SHOT_SPEED = 27;
-export const SHOT_RANGE = 900;
-export const SHOT_RADIUS = 70;
-
-/** The enemy a shot at `at` hits: the nearest of `enemies` within SHOT_RADIUS, by index, or undefined. */
-export function shotHit(at: Point, enemies: readonly Point[]): number | undefined {
-  let best: number | undefined, bestDistance = SHOT_RADIUS * SHOT_RADIUS;
-  enemies.forEach((enemy, index) => {
-    const distance = distanceSquared(at, enemy);
-    if (distance <= bestDistance) {
-      best = index;
-      bestDistance = distance;
-    }
-  });
-  return best;
-}
-
 /** The hero picks an enemy within 700 on his own when he has no living target in range. */
 export const AUTO_TARGET_RANGE = 700;
 

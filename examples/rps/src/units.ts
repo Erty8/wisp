@@ -45,6 +45,15 @@ export const UNITS: Readonly<Record<string, UnitProfile>> = {
   Ulic: { name: "Lich", life: 450, voice: [set("Undead", "HeroLich")], face: 110 },
   Udre: { name: "Dreadlord", life: 600, voice: [set("Undead", "HeroDreadLord")], face: 120 },
   Ucrl: { name: "Crypt Lord", life: 750, voice: [set("Undead", "HeroCryptLord")], face: 90 },
+  // Tavern heroes. Their sound sets are guessed, so each lists its likely prefixes.
+  Nngs: { name: "Naga Sea Witch", life: 500, voice: [set("Naga", "HeroNagaSeawitch"), set("Creeps", "HeroNagaSeawitch")], face: 110 },
+  Nbrn: { name: "Dark Ranger", life: 500, voice: [set("Creeps", "BansheeRanger"), set("Undead", "BansheeRanger"), set("Creeps", "HeroDarkRanger")], face: 85 },
+  Npbm: { name: "Pandaren Brewmaster", life: 650, voice: [set("Creeps", "PandarenBrewmaster"), set("Creeps", "HeroPandarenBrewmaster")], face: 90 },
+  Nbst: { name: "Beastmaster", life: 650, voice: [set("Creeps", "Beastmaster"), set("Creeps", "HeroBeastMaster")], face: 90 },
+  Nplh: { name: "Pit Lord", life: 700, voice: [set("Demon", "HeroPitLord"), set("Creeps", "HeroPitLord"), set("Demon", "PitLord")], face: 180 },
+  Ntin: { name: "Goblin Tinker", life: 500, voice: [set("Creeps", "HeroTinker"), set("Creeps", "GoblinTinker")], face: 110 },
+  Nfir: { name: "Firelord", life: 550, voice: [set("Creeps", "HeroFirelord"), set("Creeps", "HeroAvatarOfFlame")], face: 120 },
+  Nalc: { name: "Goblin Alchemist", life: 600, voice: [set("Creeps", "HeroAlchemist"), set("Creeps", "GoblinAlchemist")], face: 160 },
   // Soldiers the races recruit.
   hfoo: { name: "Footman", life: 420, voice: [set("Human", "Footman")], face: 70 },
   hrif: { name: "Rifleman", life: 535, voice: [set("Human", "Rifleman")] },

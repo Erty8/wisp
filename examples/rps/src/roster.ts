@@ -1,5 +1,6 @@
-// What a player can pick at the start of an RPS match: one of Warcraft's four
-// races, one of its four heroes, and the retinue that race brings. A hero's
+// What a player can pick at the start of an RPS match: one of his race's four
+// heroes (the race he chose in Warcraft's own lobby) or one of the eight
+// tavern heroes, and the retinue his race brings either way. A hero's
 // skills are listed in learning order, three basic skills then the ultimate,
 // as SkillRanks counts them; each says how the spell bar casts it.
 import { type Role, fourCC } from "./rules";
@@ -28,8 +29,8 @@ export interface Hero {
   /** The hero's portrait icon's name, as for skills. */
   readonly icon: string;
   readonly skills: readonly [Skill, Skill, Skill, Skill];
-  /** A ranged hero's missile model: his swings fire it as an aimed shot instead of striking a cone. */
-  readonly missile?: string;
+  /** A ranged hero keeps Warcraft's own attack, missile and all: a click or Space orders it at his target instead of swinging. */
+  readonly ranged?: boolean;
 }
 
 export interface Soldier {
@@ -59,7 +60,7 @@ export const RACES: readonly Race[] = [
         skill("Devotion Aura", "AHad", "", "passive", "Devotion"),
         skill("Resurrection", "AHre", "resurrection", "instant", "Resurrection"),
       ] },
-      { name: "Archmage", code: "Hamg", icon: "HeroArchMage", missile: "Abilities\\Weapons\\SorceressMissile\\SorceressMissile.mdl", skills: [
+      { name: "Archmage", code: "Hamg", icon: "HeroArchMage", ranged: true, skills: [
         skill("Blizzard", "AHbz", "blizzard", "point", "Blizzard"),
         skill("Water Elemental", "AHwe", "waterelemental", "instant", "SummonWaterElemental"),
         skill("Brilliance Aura", "AHab", "", "passive", "Brilliance"),
@@ -71,7 +72,7 @@ export const RACES: readonly Race[] = [
         skill("Bash", "AHbh", "", "passive", "Bash"),
         skill("Avatar", "AHav", "avatar", "instant", "Avatar"),
       ] },
-      { name: "Blood Mage", code: "Hblm", icon: "HeroBloodElfPrince", missile: "Abilities\\Weapons\\BloodElfMissile\\BloodElfMissile.mdl", skills: [
+      { name: "Blood Mage", code: "Hblm", icon: "HeroBloodElfPrince", ranged: true, skills: [
         skill("Flame Strike", "AHfs", "flamestrike", "point", "WallOfFire"),
         skill("Banish", "AHbn", "banish", "enemy", "Banish"),
         skill("Siphon Mana", "AHdr", "drain", "enemy", "ManaDrain"),
@@ -89,7 +90,7 @@ export const RACES: readonly Race[] = [
         skill("Critical Strike", "AOcr", "", "passive", "CriticalStrike"),
         skill("Bladestorm", "AOww", "whirlwind", "instant", "Whirlwind"),
       ] },
-      { name: "Far Seer", code: "Ofar", icon: "HeroFarseer", missile: "Abilities\\Weapons\\FarseerMissile\\FarseerMissile.mdl", skills: [
+      { name: "Far Seer", code: "Ofar", icon: "HeroFarseer", ranged: true, skills: [
         skill("Chain Lightning", "AOcl", "chainlightning", "enemy", "ChainLightning"),
         skill("Far Sight", "AOfs", "farsight", "point", "FarSight"),
         skill("Feral Spirit", "AOsf", "spiritwolf", "instant", "SpiritWolf"),
@@ -101,7 +102,7 @@ export const RACES: readonly Race[] = [
         skill("Endurance Aura", "AOae", "", "passive", "Command"),
         skill("Reincarnation", "AOre", "", "passive", "Reincarnation"),
       ] },
-      { name: "Shadow Hunter", code: "Oshd", icon: "ShadowHunter", missile: "Abilities\\Weapons\\WitchDoctorMissile\\WitchDoctorMissile.mdl", skills: [
+      { name: "Shadow Hunter", code: "Oshd", icon: "ShadowHunter", ranged: true, skills: [
         skill("Healing Wave", "AOhw", "healingwave", "ally", "HealingWave"),
         skill("Hex", "AOhx", "hex", "enemy", "Hex"),
         skill("Serpent Ward", "AOsw", "ward", "point", "SerpentWard"),
@@ -119,13 +120,13 @@ export const RACES: readonly Race[] = [
         skill("Evasion", "AEev", "", "passive", "Evasion"),
         skill("Metamorphosis", "AEme", "metamorphosis", "instant", "Metamorphosis"),
       ] },
-      { name: "Keeper of the Grove", code: "Ekee", icon: "KeeperOfTheGrove", missile: "Abilities\\Weapons\\KeeperGroveMissile\\KeeperGroveMissile.mdl", skills: [
+      { name: "Keeper of the Grove", code: "Ekee", icon: "KeeperOfTheGrove", ranged: true, skills: [
         skill("Entangling Roots", "AEer", "entanglingroots", "enemy", "EntanglingRoots"),
         skill("Force of Nature", "AEfn", "forceofnature", "point", "Ent"),
         skill("Thorns Aura", "AEah", "", "passive", "Thorns"),
         skill("Tranquility", "AEtq", "tranquility", "instant", "Tranquility"),
       ] },
-      { name: "Priestess of the Moon", code: "Emoo", icon: "PriestessOfTheMoon", missile: "Abilities\\Weapons\\MoonPriestessMissile\\MoonPriestessMissile.mdl", skills: [
+      { name: "Priestess of the Moon", code: "Emoo", icon: "PriestessOfTheMoon", ranged: true, skills: [
         skill("Scout", "AEst", "scout", "instant", "Scout"),
         skill("Searing Arrows", "AHfa", "flamingarrows", "instant", "SearingArrowsOn"),
         skill("Trueshot Aura", "AEar", "", "passive", "TrueShot"),
@@ -149,7 +150,7 @@ export const RACES: readonly Race[] = [
         skill("Unholy Aura", "AUau", "", "passive", "UnholyAura"),
         skill("Animate Dead", "AUan", "animatedead", "instant", "AnimateDead"),
       ] },
-      { name: "Lich", code: "Ulic", icon: "LichVersion2", missile: "Abilities\\Weapons\\LichMissile\\LichMissile.mdl", skills: [
+      { name: "Lich", code: "Ulic", icon: "LichVersion2", ranged: true, skills: [
         skill("Frost Nova", "AUfn", "frostnova", "enemy", "Glacier"),
         skill("Frost Armor", "AUfu", "frostarmor", "self", "FrostArmor"),
         skill("Dark Ritual", "AUdr", "darkritual", "ally", "DarkRitual"),
@@ -171,6 +172,80 @@ export const RACES: readonly Race[] = [
     army: [...pair("ugho", "melee", "Ghouls"), ...pair("ucry", "ranged", "Crypt Fiends")],
   },
 ];
+
+/**
+ * The eight heroes of Warcraft's taverns, in two pages of four for the
+ * picker (`HERO_LISTS`). A tavern hero leads his player's own race's army.
+ */
+export const TAVERN_HEROES: readonly Hero[] = [
+  { name: "Naga Sea Witch", code: "Nngs", icon: "NagaSeaWitch", ranged: true, skills: [
+    skill("Forked Lightning", "ANfl", "forkedlightning", "enemy", "MonsoonBolt"),
+    skill("Frost Arrows", "ANfa", "coldarrowstarg", "enemy", "ColdArrowsOn"),
+    skill("Mana Shield", "ANms", "manashieldon", "instant", "NeutralManaShield"),
+    skill("Tornado", "ANto", "tornado", "instant", "Tornado"),
+  ] },
+  { name: "Dark Ranger", code: "Nbrn", icon: "BansheeRanger", ranged: true, skills: [
+    skill("Silence", "ANsi", "silence", "point", "Silence"),
+    skill("Black Arrow", "ANba", "blackarrow", "enemy", "TheBlackArrow"),
+    skill("Life Drain", "ANdr", "drain", "enemy", "LifeDrain"),
+    skill("Charm", "ANch", "charm", "enemy", "Charm"),
+  ] },
+  { name: "Pandaren Brewmaster", code: "Npbm", icon: "PandarenBrewmaster", skills: [
+    skill("Breath of Fire", "ANbf", "breathoffire", "point", "BreathOfFire"),
+    skill("Drunken Haze", "ANdh", "drunkenhaze", "enemy", "StrongDrink"),
+    skill("Drunken Brawler", "ANdb", "", "passive", "DrunkenDodge"),
+    skill("Storm, Earth, and Fire", "ANef", "elementalfury", "instant", "StormEarth&Fire"),
+  ] },
+  { name: "Beastmaster", code: "Nbst", icon: "Beastmaster", skills: [
+    skill("Summon Bear", "ANsg", "summongrizzly", "instant", "GrizzlyBear"),
+    skill("Summon Quilbeast", "ANsq", "summonquillbeast", "instant", "QuillBeast"),
+    skill("Summon Hawk", "ANsw", "summonwareagle", "instant", "WarEagle"),
+    skill("Stampede", "ANst", "stampede", "point", "Stampede"),
+  ] },
+  { name: "Pit Lord", code: "Nplh", icon: "PitLord", skills: [
+    skill("Rain of Fire", "ANrf", "rainoffire", "point", "Fire"),
+    skill("Howl of Terror", "ANht", "howlofterror", "instant", "HowlOfTerror"),
+    skill("Cleaving Attack", "ANca", "", "passive", "CleavingAttack"),
+    skill("Doom", "ANdo", "doom", "enemy", "Doom"),
+  ] },
+  { name: "Goblin Tinker", code: "Ntin", icon: "HeroTinker", ranged: true, skills: [
+    skill("Pocket Factory", "ANsy", "summonfactory", "point", "PocketFactory"),
+    skill("Cluster Rockets", "ANcs", "clusterrockets", "point", "ClusterRockets"),
+    skill("Engineering Upgrade", "ANeg", "", "passive", "EngineeringUpgrade"),
+    skill("Robo-Goblin", "ANrg", "robogoblin", "instant", "ROBOGOBLIN"),
+  ] },
+  { name: "Firelord", code: "Nfir", icon: "HeroAvatarOfFlame", ranged: true, skills: [
+    skill("Soul Burn", "ANso", "soulburn", "enemy", "SoulBurn"),
+    skill("Summon Lava Spawn", "ANlm", "lavamonster", "instant", "LavaSpawn"),
+    skill("Incinerate", "ANic", "", "passive", "Incinerate"),
+    skill("Volcano", "ANvc", "volcano", "point", "Volcano"),
+  ] },
+  { name: "Goblin Alchemist", code: "Nalc", icon: "HeroAlchemist", skills: [
+    skill("Healing Spray", "ANhs", "healingspray", "point", "HealingSpray"),
+    skill("Chemical Rage", "ANcr", "chemicalrage", "instant", "ChemicalRage"),
+    skill("Acid Bomb", "ANab", "acidbomb", "enemy", "AcidBomb"),
+    skill("Transmute", "ANtm", "transmute", "enemy", "Transmute"),
+  ] },
+];
+
+/**
+ * What a player picks from, once his race is known: his race's heroes
+ * (list 0), then the tavern heroes, four to a page (lists 1 and 2).
+ */
+export const HERO_LISTS = 3;
+
+/** The names the picker's first page gives the lists, for a player of `race`. */
+export function heroListNames(race: number): string[] {
+  return [`${raceOf(race).name} heroes`, "Tavern heroes", "More tavern heroes"];
+}
+
+/** The heroes in a list for a player of `race`: his race's four, or a page of tavern heroes; none for a list out of range. */
+export function heroList(race: number, list: number): readonly Hero[] {
+  if (list === 0) return raceOf(race).heroes;
+  if (list === 1) return TAVERN_HEROES.slice(0, 4);
+  if (list === 2) return TAVERN_HEROES.slice(4, 8);
+  return [];
+}
 
 /** The pick a player who hasn't chosen in time gets: the Human Mountain King. */
 export const DEFAULT_PICK = { race: 0, hero: 2 } as const;

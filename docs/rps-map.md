@@ -1,8 +1,9 @@
 # The RPS example map
 
 [wisp:examples/rps/](../examples/rps/) is a 1999-style role-playing strategy
-(RPS) prototype: each player picks one of Warcraft's four races and one of its
-four heroes, starts with that hero alone, recruits the race's soldiers from a
+(RPS) prototype: each player plays the race he chose in Warcraft's lobby,
+picks one of its four heroes or one of the eight tavern heroes, starts with
+that hero alone, recruits his race's soldiers from a
 quartermaster in a dialogue, and leads them under a
 third-person camera the player turns by dragging with the right mouse button,
 moves with
@@ -24,17 +25,21 @@ main.ts compiles to one: its top-level functions and constants are each one.
 An imported name takes none (the compiled Lua reads it through its module),
 so plain constants live in src/constants.ts.
 
-## Picking a race and a hero
+## Picking a hero
 
-At the start each player sees a picker (src/picker.ts) over their start
-location: the four races, then the chosen race's four heroes, in Warcraft's
-own dialog buttons, with Back to change race. A click or the keys 1 to 4
-choose, 0 goes back. Clicks and keys reach every client, so every client
-spawns the same hero. After 30 seconds (`PICK_SECONDS`) a player still
-choosing gets their race's first hero, or the Human Mountain King
-(`DEFAULT_PICK`) with no race chosen. The hero spawns alone on the player's
-start location with 150 gold (`STARTING_GOLD`); his race's soldiers are
-recruited (see Recruiting):
+Each player's race is the one he chose in Warcraft's own lobby
+(`gameRace`: `GetPlayerRace`, where a random race is already settled;
+anything else plays as Human). At the start he sees a picker
+(src/picker.ts) over his start location, in Warcraft's own dialog buttons:
+first his race's heroes or the tavern's ("Human heroes", "Tavern heroes",
+"More tavern heroes": `heroListNames`), then the four heroes of that list
+(`heroList`), with Back to the lists. A choice without a label is hidden. A
+click or the keys 1 to 4 choose, 0 goes back. Clicks and keys reach every
+client, so every client spawns the same hero. After 30 seconds
+(`PICK_SECONDS`) a player still choosing gets the first hero of the list he
+is looking at, or his race's first hero. The hero spawns alone on the
+player's start location with 150 gold (`STARTING_GOLD`); his race's soldiers
+are recruited (see Recruiting), whichever hero he picked:
 
 | Race | Heroes | Soldiers to recruit (two of each, 10 food) |
 | --- | --- | --- |
@@ -42,6 +47,15 @@ recruited (see Recruiting):
 | Orc | Blademaster, Far Seer, Tauren Chieftain, Shadow Hunter | grunts, headhunters |
 | Night Elf | Demon Hunter, Keeper of the Grove, Priestess of the Moon, Warden | huntresses, archers |
 | Undead | Death Knight, Lich, Dreadlord, Crypt Lord | ghouls, crypt fiends |
+
+The tavern heroes (`TAVERN_HEROES`), in two pages of four: Naga Sea Witch,
+Dark Ranger, Pandaren Brewmaster and Beastmaster; Pit Lord, Goblin Tinker,
+Firelord and Goblin Alchemist. The Naga Sea Witch, Dark Ranger, Goblin
+Tinker and Firelord are ranged (see Ranged). Their sound sets are guesses
+(src/units.ts lists likely prefixes for each, and the map asks the game
+which one it has), and their skills' rawcodes, order strings and icons are
+untested in Warcraft yet. Headless has no lobby: the journey gives both
+players Human.
 
 src/roster.ts lists each hero's four skills in learning order (three basic,
 then the ultimate) with its rawcode, order string, icon and how the spell bar
@@ -180,18 +194,24 @@ platforms.
   guard cancels the rest of the swing's recovery. Each model's weapon lands
   at its own point in the animation: `-impact N` makes the damage land N
   ticks into the swing (5 by default, 2 to 20).
-- **Shot**: the seven ranged heroes (Archmage, Blood Mage, Far Seer, Shadow
-  Hunter, Keeper of the Grove, Priestess of the Moon, Lich; `missile` in
-  src/roster.ts) fire instead of striking: at the impact tick their missile
-  model leaves them toward the target, or along their facing without one, as
-  an effect 60 above the ground, flies 27
-  a camera tick (900 a second) and hits the nearest enemy within 70 of where
-  it lands each tick (`shotHit`), for the combo step's damage, or fades after
-  900. Enemies can step out of its path. The missile paths are untested in
-  Warcraft yet.
+- **Ranged**: the eleven ranged heroes (Archmage, Blood Mage, Far Seer, Shadow
+  Hunter, Keeper of the Grove, Priestess of the Moon, Lich, and the tavern's
+  Naga Sea Witch, Dark Ranger, Goblin Tinker and Firelord; `ranged` in
+  src/roster.ts) keep Warcraft's own attack, which melee heroes lose at
+  spawn: a click or Space orders it at the soft target (`rangedAttack`),
+  with the hero's own missile, range, damage and cooldown, and he closes in
+  when the target is out of range. Without a target the click does nothing,
+  and his attack still fires at enemies that come into range while he holds
+  his ground. No combo, swing timing or reach step applies to them, and a
+  hit doesn't make them hold position (that is for melee heroes, who have no
+  attack and would run). An earlier hand-made shot, a missile effect flown
+  27 a tick that hit the first enemy within 70, was taken out: Warcraft's
+  attack plays better. Untested in Warcraft yet.
 - **Weight**: every hit spawns a slash effect; the hero and the units he hit
   freeze for 2 ticks (`SetUnitTimeScale` 0, hit-stop); the finisher knocks
-  them back 85. Melee doesn't shake the camera. Knockbacks go through
+  them back 85. Melee doesn't shake the camera: the damage a swing or a
+  counter-slash deals is marked while it lands (`meleeHit`), so the shake
+  never takes it for spell damage. Knockbacks go through
   `SetUnitPosition`, which keeps a unit to where Warcraft's pathing lets it
   stand, so none ends in a cliff or a tree. A 45 lunge on each swing was tried
   and dropped: in Warcraft every click dashed the hero, and he bumped back
@@ -264,7 +284,7 @@ the [number rules](../plugins/number-rules.ts) (wisp:plugins/number-rules.ts) re
 
 | Timer | Handler | What it does |
 | --- | --- | --- |
-| 0.03 s | `rps.camera` | Lands, ends and thaws swings, moves shots and freezes a raised guard (`fightTick`); every third tick picks a target for a hero without one; counts the 4 s combat timer down; every fifth tick (0.15 s) re-issues WASD moves and holds the hero's ground (`holdGround`); then turns the local camera by the right-mouse drag and applies it. |
+| 0.03 s | `rps.camera` | Lands, ends and thaws swings and freezes a raised guard (`fightTick`); every third tick picks a target for a hero without one; counts the 4 s combat timer down; every fifth tick (0.15 s) re-issues WASD moves and holds the hero's ground (`holdGround`); then turns the local camera by the right-mouse drag and applies it. |
 | 0.10 s | `rps.occlusion` | Hides trees between each player's camera eye and hero. |
 | 0.10 s | `rps.hud` | Fills every player's health and mana bars, spell bar, quest journal, interact hint and inventory, and brings his Warcraft quest log up to date. |
 | 0.5 s | `rps.stance` | Orders strayed retinue units back to their stance slots; drops a dead soft target. |
@@ -286,7 +306,7 @@ reads its own pointer (`BlzGetMouseScreenPosX`, in frame units or pixels
 depending on the game build) and turns its camera at once (`dragYaw`: a
 whole screen's width a full turn, dragging right turns right), and every 3
 ticks sends the new yaw to every client (`BlzSendSyncData`), where it becomes
-the yaw WASD, shots and the tree check go by. Only a drag sends anything: a
+the yaw WASD and the tree check go by. Only a drag sends anything: a
 continuous mouse-move event would send every twitch over the network. The
 earlier automatic follow behind the hero (`followYaw`) is off for now.
 It holds its distance and angle in combat too, apart from a short shake on
@@ -307,7 +327,8 @@ line.
 The camera shakes for 0.15 s on impact: when a siege attack
 (`BlzGetEventAttackType() === ATTACK_TYPE_SIEGE`) lands within 500 of the
 hero, or when the hero's own spell damage (`BlzGetEventIsAttack()` false)
-lands. The Mountain King has no critical strike, so his Storm Bolt and
+lands, unless it is his own swing or counter-slash (`meleeHit`), whatever
+Warcraft reports for it. The Mountain King has no critical strike, so his Storm Bolt and
 Thunder Clap stand in for it. The shake sets `CameraSetSourceNoise` and
 `CameraSetTargetNoise` to magnitude 4, velocity 100 on that player's screen;
 the camera tick counts the 150 ms down in synchronized state and sets both

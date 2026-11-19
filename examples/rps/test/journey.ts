@@ -1,6 +1,6 @@
 // The RPS headless journey, declared once for Bun and 32-bit Lua: both
-// both players pick a race and a hero (player 1 by keys, player 2 by
-// clicking the picker), player 1 presses L with no skill point, player 2 clicks Storm Bolt on the
+// both players, Human in the lobby, pick their race's heroes and a hero
+// (player 1 by keys, player 2 by clicking the picker), player 1 presses L with no skill point, player 2 clicks Storm Bolt on the
 // spell bar with no target, then they walk with W and D held together, press Tab with
 // nobody in range, F with no target, switch stances, then a hot reload,
 // the spell keys (headless, nothing is learned) and A held, which also closes
@@ -37,8 +37,9 @@ export const RPS_MAP = {
     GetSoundFileDuration: () => 1500,
     // Every unit is 32 across its collision.
     BlzGetUnitCollisionSize: () => 32,
-    // Every player is red.
+    // Every player is red, and chose Human in the lobby (headless gives a constant its own name as its value).
     GetPlayerColor: () => 0,
+    GetPlayerRace: () => "RACE_HUMAN",
     // The interface skin has no quest giver key: the map falls back to the file.
     SkinManagerGetLocalPath: () => "",
     // Player N starts at start location N: player 1 west of the center, player 2 east of it.
@@ -77,7 +78,7 @@ export const RPS_MAP = {
     SetUnitFacingTimed: LOOKS, QueueUnitAnimation: LOOKS,
     CreateMinimapIconOnUnit: LOOKS, SetMinimapIconVisible: LOOKS, DestroyMinimapIcon: LOOKS,
     SetUnitPropWindow: ORDERS, GetUnitDefaultPropWindow: ORDERS, SetSoundChannel: LOOKS, PauseUnit: "headless units take no orders, so pausing them changes nothing the journey checks",
-    BlzSetSpecialEffectHeight: "the journey checks the shot's flight, not how high its missile draws", GetEventDamage: "nothing fights headless, so no hit reaches a guard",
+    GetEventDamage: "nothing fights headless, so no hit reaches a guard",
     SetPlayerState: "food caps and gold aren't read back; the journey owns no outposts",
     IssuePointOrder: ORDERS, IssueTargetOrder: ORDERS, SetUnitOwner: ORDERS, IsPlayerEnemy: ORDERS,
     TriggerRegisterPlayerUnitEvent: "nothing fights headless, so no damage event fires",
@@ -93,7 +94,7 @@ export const RPS_MAP = {
 
 /** Inside the spell bar's first slot (Storm Bolt), which spans x 0.311 to 0.351 and y 0.018 to 0.058 of the 0.8 by 0.6 screen. */
 const STORM_BOLT_SLOT = { x: 0.328125, y: 0.0390625 };
-/** Inside the picker's first choice (Human), which spans x 0.27 to 0.53 and y 0.37 to 0.402, and its third (Mountain King), y 0.294 to 0.326. */
+/** Inside the picker's first choice (Human heroes), which spans x 0.27 to 0.53 and y 0.37 to 0.402, and its third (Mountain King), y 0.294 to 0.326. */
 const FIRST_CHOICE = { x: 0.40625, y: 0.384765625 };
 const THIRD_CHOICE = { x: 0.40625, y: 0.3125 };
 /** The picker's second choice (Archmage among Human heroes), y 0.332 to 0.364. */
@@ -106,7 +107,8 @@ const ESCAPE = 0x1b, SPACE = 0x20, E = 0x45, I = 0x49, Q = 0x51, L = 0x4c, W = 0
 export const RPS_JOURNEY: Journey = {
   frames: 1000,
   events: [
-    // Player 1 picks with the keys (1 Human, 0 back, 1 Human, 3 Mountain King); player 2 clicks Human, then the ranged Archmage.
+    // Player 1 picks with the keys (1 Human heroes, 0 back, 1 Human heroes, 3 Mountain King); player 2 clicks Human heroes,
+    // then the ranged Archmage.
     { frame: 2, player: 0, key: ONE, meta: 0 },
     { frame: 3, player: 1, click: FIRST_CHOICE },
     { frame: 4, player: 0, key: ZERO, meta: 0 },

@@ -2,7 +2,7 @@ import { assertEquals, test } from "wisp/src/runtime/testing";
 import { CREEPS, OUTPOST } from "./constants";
 import { type Scene, FACE_HEIGHT, SCENES, TALK_ANIMATION, WANDERERS, gestureOf } from "./dialogue";
 import { QUEST_SITES } from "./quests";
-import { RACES } from "./roster";
+import { RACES, TAVERN_HEROES } from "./roster";
 import { fourCC } from "./rules";
 import { UNITS, faceHeight, gestureFor, talkAnimation, voiceCandidates } from "./units";
 
@@ -18,6 +18,7 @@ function sceneCodes(scene: Scene): string[] {
 /** Every unit type the map creates, by rawcode. */
 function usedCodes(): string[] {
   const codes: string[] = [];
+  for (const hero of TAVERN_HEROES) codes.push(hero.code);
   for (const race of RACES) {
     for (const hero of race.heroes) codes.push(hero.code);
     for (const soldier of race.army) codes.push(soldier.code);

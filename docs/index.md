@@ -72,7 +72,8 @@ Start from the [sample map](sample-map.md) (wisp:docs/sample-map.md):
 a complete two-player map with its build, test, fresh-match and hot-reload
 commands, and what a base map needs.
 The [RPS example map](rps-map.md) (wisp:docs/rps-map.md, wisp:examples/rps/)
-shows a role-playing strategy prototype on raw natives: a race and hero picker
+shows a role-playing strategy prototype on raw natives: a hero picker for the
+lobby race, with its heroes or the tavern's,
 that spawns the hero alone, soldiers recruited in a dialogue, a damped third-person
 camera turned by a right-mouse drag, with terrain lift and tree
 occlusion, held-key WASD through key-down and key-up registrations, manual

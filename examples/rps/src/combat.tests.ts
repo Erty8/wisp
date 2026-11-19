@@ -2,7 +2,7 @@ import { assertEquals, test } from "wisp/src/runtime/testing";
 import {
   attackFacing, ringCorner, ringSize,
   COMBO_WINDOW_TICKS, PARRY_TICKS, SWING_HALF_ANGLE, SWING_RANGE,
-  MELEE_REACH, RECOVER_AFTER_IMPACT, FINISHER_RECOVERY, BUFFER_TICKS, bufferable, STAGGER_TICKS, canAct, stepIn, swingTicks, angleGap, atan2Tenths, autoTarget, isSpellBarClick, shotHit, targetScore, blockedDamage, guardOutcome, inCone, nextComboStep, swingDamage,
+  MELEE_REACH, RECOVER_AFTER_IMPACT, FINISHER_RECOVERY, BUFFER_TICKS, bufferable, STAGGER_TICKS, canAct, stepIn, swingTicks, angleGap, atan2Tenths, autoTarget, isSpellBarClick, targetScore, blockedDamage, guardOutcome, inCone, nextComboStep, swingDamage,
 } from "./combat";
 
 test("rps combat: the integer arctangent finds each quadrant's angle within a degree", () => {
@@ -66,13 +66,6 @@ test("rps combat: a mouse press within 2 ticks of a spell bar click belongs to t
   assertEquals(isSpellBarClick(100, 102), true, "just after");
   assertEquals(isSpellBarClick(100, 103), false, "a later bar click is its own");
   assertEquals(isSpellBarClick(100, -100), false, "no bar click");
-});
-
-test("rps combat: a shot hits the nearest enemy within 70, or none", () => {
-  const at = { x: 0, y: 0 };
-  assertEquals(shotHit(at, [{ x: 0, y: 69 }, { x: 0, y: 30 }]), 1, "the nearer of two");
-  assertEquals(shotHit(at, [{ x: 0, y: 71 }]), undefined, "just out of reach");
-  assertEquals(shotHit(at, []), undefined, "nobody");
 });
 
 test("rps combat: the automatic target is the enemy ahead over one as near behind, within 700", () => {
