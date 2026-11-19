@@ -1,3 +1,6 @@
 node_modules
 build/
 *.tsbuildinfo
+
+# Original Blizzard map: keep it local, never commit it
+/maps/(8)OrdealGround_S2_v1.07.w3x
