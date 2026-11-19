@@ -3800,7 +3800,7 @@ end
 
 function mapConfig()
     SetMapName([[Wisp RPS]])
-    SetMapDescription([[Lead a hero and a small retinue: Q/E turn the camera, WASD moves, Tab targets, F attacks, 1/2 switch stances. Hold outposts for gold.]])
+    SetMapDescription([[Pick a hero of your lobby race or the tavern and lead a squad: WASD moves, drag the right mouse to turn, click, Space or K attacks, Q guards, 1-4 cast, Z/X/C command the squad, E talks or picks up, I opens the inventory, G walks. Recruit at the race bases, take quests, hold outposts for gold.]])
     SetPlayers(2)
     SetTeams(2)
     SetGamePlacement(MAP_PLACEMENT_TEAMS_TOGETHER)

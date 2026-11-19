@@ -2,7 +2,7 @@ import { assertEquals, test } from "wisp/src/runtime/testing";
 import {
   attackFacing, ringCorner, ringSize,
   COMBO_WINDOW_TICKS, PARRY_TICKS, SWING_HALF_ANGLE, SWING_RANGE,
-  MELEE_REACH, RECOVER_AFTER_IMPACT, FINISHER_RECOVERY, BUFFER_TICKS, bufferable, STAGGER_TICKS, canAct, stepIn, swingTicks, angleGap, atan2Tenths, autoTarget, isSpellBarClick, targetScore, blockedDamage, guardOutcome, inCone, nextComboStep, swingDamage,
+  MELEE_REACH, RECOVER_AFTER_IMPACT, FINISHER_RECOVERY, BUFFER_TICKS, bufferable, STAGGER_TICKS, canAct, stepIn, swingTicks, angleGap, atan2Tenths, autoTarget, isSpellBarClick, moveSpeed, targetScore, blockedDamage, guardOutcome, inCone, nextComboStep, swingDamage,
 } from "./combat";
 
 test("rps combat: the integer arctangent finds each quadrant's angle within a degree", () => {
@@ -115,4 +115,11 @@ test("rps combat: the target's ring is twice its collision plus 70 across, at le
   assertEquals(ringSize(48.5), 166, "fractional collision rounds down");
   const corner = ringCorner({ x: 1000, y: -200 }, 132);
   assertEquals(`${corner.x},${corner.y}`, "934,-266", "the lower-left corner");
+});
+
+test("rps combat: walking moves the hero at 9/20 of his run speed, and a raised guard slows either to 3/5", () => {
+  assertEquals(moveSpeed(300, false, false), 300, "running");
+  assertEquals(moveSpeed(300, true, false), 135, "walking");
+  assertEquals(moveSpeed(300, false, true), 180, "running, guard up");
+  assertEquals(moveSpeed(300, true, true), 81, "walking, guard up");
 });

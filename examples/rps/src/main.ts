@@ -38,9 +38,9 @@ import { questTick } from "./questRuntime";
 import { KILL_CAM_RANGE, KILL_CAM_TICKS, SLOW_MOTION_RADIUS, SLOW_MOTION_SCALE, endsFight, killCamShot } from "./killcam";
 import { type Hero, type Race, type Skill, DEFAULT_PICK, HERO_LISTS, PICK_SECONDS, TAVERN_HEROES, disabledIcon, heroList, heroListNames, heroOf, icon, raceOf, rawcode } from "./roster";
 import {
-  AUTO_TARGET_RANGE, BLOCK_MANA, CLICK_SETTLE_TICKS, FINISHER_KNOCKBACK, GUARD_POSE_TICKS, GUARD_SPEED_DENOMINATOR, GUARD_SPEED_NUMERATOR, HIT_STOP_TICKS, IMPACT_TICKS,
+  AUTO_TARGET_RANGE, BLOCK_MANA, CLICK_SETTLE_TICKS, FINISHER_KNOCKBACK, GUARD_POSE_TICKS, HIT_STOP_TICKS, IMPACT_TICKS,
   PARRY_COUNTER_DAMAGE, PARRY_KNOCKBACK, RECOIL_TICKS, STAGGER_TICKS, SWING_HALF_ANGLE, SWING_RANGE, bufferable, canAct, stepIn, swingTicks,
-  atan2Tenths, attackFacing, autoTarget, ringCorner, ringSize, blockedDamage, guardOutcome, inCone, isSpellBarClick, nextComboStep, swingDamage,
+  atan2Tenths, attackFacing, autoTarget, ringCorner, ringSize, blockedDamage, guardOutcome, inCone, isSpellBarClick, moveSpeed, nextComboStep, swingDamage,
 } from "./combat";
 import {
   type Candidate, type Point, type Role, type SkillRanks, type Yaw,
@@ -130,6 +130,8 @@ interface Seat extends SceneSeat {
   camera: number;
   /** The map's interface for this player: health and mana, spell bar. */
   hud: Hud | undefined;
+  /** Whether the hero walks rather than runs (G). */
+  walking?: boolean | undefined;
   /** Whether the player has his inventory open (its button, or I). */
   inventoryOpen?: boolean | undefined;
   /** Whether the hero is rooted (`rootTick`). */
@@ -486,7 +488,7 @@ function damaged(): void {
   }
 }
 
-// Manual combat: left click or Space swings, right click or Q held guards.
+// Manual combat: left click, Space or K swings, right click or Q held guards.
 
 function now(): number {
   return state().ticks;
@@ -625,7 +627,7 @@ function raiseGuard(seat: Seat): void {
     fight.recoverTick = now();
   }
   fight.guardTick = now();
-  SetUnitMoveSpeed(hero, floorDiv(fight.speed * GUARD_SPEED_NUMERATOR, GUARD_SPEED_DENOMINATOR));
+  SetUnitMoveSpeed(hero, moveSpeed(fight.speed, seat.walking === true, true));
   fight.guardEffect = AddSpecialEffectTarget(GUARD_MODEL, hero, "origin");
   // Raised on the move, the guard walks; standing, it takes up its pose.
   if (moving(seat)) timeScale(hero, GUARD_WALK_SPEED);
@@ -643,11 +645,18 @@ function lowerGuard(seat: Seat): void {
   if (fight.guardEffect !== undefined) DestroyEffect(fight.guardEffect);
   fight.guardEffect = undefined;
   timeScale(hero, 1);
-  SetUnitMoveSpeed(hero, fight.speed);
+  SetUnitMoveSpeed(hero, moveSpeed(fight.speed, seat.walking === true, false));
   if (!moving(seat)) SetUnitAnimation(hero, "stand");
 }
 
 /** The guard follows the feet: walking at guard speed while a movement key is held, back in its pose when none is. */
+/** G: the hero walks or runs, from now on; a raised guard keeps slowing whichever it is (`moveSpeed`). */
+function toggleWalk(seat: Seat): void {
+  seat.walking = seat.walking !== true;
+  SetUnitMoveSpeed(seat.hero, moveSpeed(seat.fight.speed, seat.walking, seat.fight.guardTick !== undefined));
+  say(seat, seat.walking ? "Walking. G to run." : "Running. G to walk.");
+}
+
 function guardFootwork(seat: Seat): void {
   const { fight, hero } = seat;
   if (fight.guardTick === undefined) return;
@@ -1233,7 +1242,8 @@ function key(down: boolean): void {
   else if (code === KEY.c) attackTarget(seat);
   else if (SKILL_KEY_CODES.includes(code)) castSkill(seat, SKILL_KEY_CODES.indexOf(code));
   else if (code === KEY.l) learnNext(seat);
-  else if (code === KEY.space) startSwing(seat, undefined);
+  else if (code === KEY.space || code === KEY.k) startSwing(seat, undefined);
+  else if (code === KEY.g) toggleWalk(seat);
   else if (CAMERA_KEYS.includes(code)) setCamera(seat, CAMERA_KEYS.indexOf(code));
 }
 
@@ -1543,7 +1553,7 @@ function finishPick(pick: Pick, hero: Hero): void {
     ? `Your party is empty: press E by your base's recruiter for soldiers (free to your own race), and by its quest giver for work that unlocks its veterans.`
     : `Your party is empty: press E by the sellsword at the tavern, whose first contract is free; the race bases sell their soldiers too.`;
   const keys = seat.heroInfo.skills.map((skill, index) => skill.targeting === "passive" ? `${skill.name} (passive)` : `${SKILL_KEYS[index]} ${skill.name}`).join(", ");
-  say(seat, `WASD moves the ${seat.heroInfo.name}, hold the right mouse button and drag to turn the camera, left click or Space swings, hold Q to guard (early: parry), Tab targets; your squad: Z holds here, X follows you (and falls back from a fight), C attacks your target. Skills: ${keys}; click the spell bar too, + or L learns. 6 to 0 and - switch cameras. E talks to whoever is near or picks up an item, I opens your inventory. ${party} Press E by the sergeant at a tavern to talk (Space skips a line, 1 to 4 choose, Esc leaves). Hold outposts for gold.`);
+  say(seat, `WASD moves the ${seat.heroInfo.name}, hold the right mouse button and drag to turn the camera, left click, Space or K attacks, G walks or runs, hold Q to guard (early: parry), Tab targets; your squad: Z holds here, X follows you (and falls back from a fight), C attacks your target. Skills: ${keys}; click the spell bar too, + or L learns. 6 to 0 and - switch cameras. E talks to whoever is near or picks up an item, I opens your inventory. ${party} Press E by the sergeant at a tavern to talk (Space skips a line, 1 to 4 choose, Esc leaves). Hold outposts for gold.`);
 }
 
 // Outposts: capture every second, income every five.

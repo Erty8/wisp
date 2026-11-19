@@ -94,9 +94,9 @@ export const BARK_TEXT_SIZE = FLOAT_TEXT_SIZE;
  * ConvertOsKeyType of the virtual-key code. A key event reports the same code
  * as GetHandleId of its key.
  */
-export const KEY = { escape: 0x1b, minus: 0xbd, tab: 0x09, space: 0x20, zero: 0x30, one: 0x31, two: 0x32, three: 0x33, four: 0x34, five: 0x35, six: 0x36, seven: 0x37, eight: 0x38, nine: 0x39, a: 0x41, c: 0x43, d: 0x44, e: 0x45, i: 0x49, l: 0x4c, q: 0x51, s: 0x53, w: 0x57, x: 0x58, z: 0x5a } as const;
+export const KEY = { escape: 0x1b, minus: 0xbd, tab: 0x09, space: 0x20, zero: 0x30, one: 0x31, two: 0x32, three: 0x33, four: 0x34, five: 0x35, six: 0x36, seven: 0x37, eight: 0x38, nine: 0x39, a: 0x41, c: 0x43, d: 0x44, e: 0x45, g: 0x47, i: 0x49, k: 0x4b, l: 0x4c, q: 0x51, s: 0x53, w: 0x57, x: 0x58, z: 0x5a } as const;
 /** Registration order: an array, since Lua walks a table's keys in no fixed order. */
-export const KEY_CODES = [KEY.escape, KEY.minus, KEY.space, KEY.q, KEY.l, KEY.w, KEY.a, KEY.s, KEY.d, KEY.tab, KEY.z, KEY.x, KEY.c, KEY.e, KEY.i, KEY.one, KEY.two, KEY.three, KEY.four, KEY.five, KEY.six, KEY.seven, KEY.eight, KEY.nine, KEY.zero];
+export const KEY_CODES = [KEY.escape, KEY.minus, KEY.space, KEY.q, KEY.l, KEY.w, KEY.a, KEY.s, KEY.d, KEY.tab, KEY.z, KEY.x, KEY.c, KEY.e, KEY.i, KEY.k, KEY.g, KEY.one, KEY.two, KEY.three, KEY.four, KEY.five, KEY.six, KEY.seven, KEY.eight, KEY.nine, KEY.zero];
 /** The skill keys, by skill. */
 export const SKILL_KEY_CODES: readonly number[] = [KEY.one, KEY.two, KEY.three, KEY.four];
 /** The picker's choice keys. */

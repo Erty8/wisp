@@ -41,6 +41,15 @@ export const PARRY_KNOCKBACK = 90;
 /** Guarding slows the hero to 3/5 of his speed. */
 export const GUARD_SPEED_NUMERATOR = 3;
 export const GUARD_SPEED_DENOMINATOR = 5;
+/** Walking (G) moves the hero at 9/20 of his run speed. */
+export const WALK_SPEED_NUMERATOR = 9;
+export const WALK_SPEED_DENOMINATOR = 20;
+
+/** The hero's move speed: his run speed, walking at 9/20 of it, and a raised guard slowing either to 3/5. */
+export function moveSpeed(run: number, walking: boolean, guarding: boolean): number {
+  const base = walking ? floorDiv(run * WALK_SPEED_NUMERATOR, WALK_SPEED_DENOMINATOR) : run;
+  return guarding ? floorDiv(base * GUARD_SPEED_NUMERATOR, GUARD_SPEED_DENOMINATOR) : base;
+}
 
 /** The angle from the origin to (dx, dy), in tenths of a degree from east, counterclockwise, 0..3599. */
 export function atan2Tenths(dy: number, dx: number): number {

@@ -85,8 +85,9 @@ texture in Warcraft; the roster's icon names are untested there yet.
 | Key | What it does |
 | --- | --- |
 | W A S D (held) | Move the hero 250 units at a time relative to the camera; two keys move diagonally, opposite keys cancel. Released, the hero holds his ground. |
+| G | Walk or run, toggled: walking moves the hero at 9/20 of his run speed (`moveSpeed`, `toggleWalk`), and Warcraft slows his walk animation to match; a raised guard still slows either to 3/5. |
 | Right mouse button (held, drag) | Turn the camera: dragging across the whole screen turns it a full turn. |
-| Left click, Space | Swing, a three-hit combo: at the targeted enemy, the hero turning to face him, or at his own front without a target; the click says when, not where. |
+| Left click, Space, K | Swing, a three-hit combo: at the targeted enemy, the hero turning to face him, or at his own front without a target; the click says when, not where. |
 | Q (held) | Guard: a hit from the front in the first 0.24 s is parried, later ones blocked for mana. |
 | E | Interact: talk to the nearest NPC within 350, or pick up the nearest item within 200, whichever is nearer (see Items). The hint over the spell bar says which. |
 | I, or the Inventory button | Open or close the inventory panel in the bottom-right corner; a click on a slot uses its item. |

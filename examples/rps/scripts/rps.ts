@@ -45,7 +45,7 @@ const interfaceFiles = [{ entry: "war3mapSkin.txt", contents: new TextEncoder().
 
 const declaration: MapDeclaration = {
   author: "Wisp",
-  description: "Lead a hero and a small retinue: Q/E turn the camera, WASD moves, Tab targets, F attacks, 1/2 switch stances. Hold outposts for gold.",
+  description: "Pick a hero of your lobby race or the tavern and lead a squad: WASD moves, drag the right mouse to turn, click, Space or K attacks, Q guards, 1-4 cast, Z/X/C command the squad, E talks or picks up, I opens the inventory, G walks. Recruit at the race bases, take quests, hold outposts for gold.",
   suggestedPlayers: "1-2",
   players: [{ id: 0, name: "Player 1" }, { id: 1, name: "Player 2" }],
   // Rivals: each player is their own force, so they contest each other's outposts.

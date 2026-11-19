@@ -101,7 +101,7 @@ const THIRD_CHOICE = { x: 0.40625, y: 0.3125 };
 const SECOND_CHOICE = { x: 0.40625, y: 0.34765625 };
 /** Inside a scene's second choice, which spans x 0.54 to 0.79 and y 0.198 to 0.228. */
 const SCENE_SECOND_CHOICE = { x: 0.6640625, y: 0.2109375 };
-const ESCAPE = 0x1b, SPACE = 0x20, E = 0x45, I = 0x49, Q = 0x51, L = 0x4c, W = 0x57, A = 0x41, D = 0x44, TAB = 0x09, Z = 0x5a, X = 0x58, C = 0x43, ONE = 0x31, TWO = 0x32, THREE = 0x33, NINE = 0x39, ZERO = 0x30, MINUS = 0xbd;
+const ESCAPE = 0x1b, SPACE = 0x20, G = 0x47, K = 0x4b, E = 0x45, I = 0x49, Q = 0x51, L = 0x4c, W = 0x57, A = 0x41, D = 0x44, TAB = 0x09, Z = 0x5a, X = 0x58, C = 0x43, ONE = 0x31, TWO = 0x32, THREE = 0x33, NINE = 0x39, ZERO = 0x30, MINUS = 0xbd;
 
 /** 60 frames a second: about 17 seconds, so every timer fires and both scenes end. */
 export const RPS_JOURNEY: Journey = {
@@ -148,6 +148,10 @@ export const RPS_JOURNEY: Journey = {
     { frame: 445, player: 1, key: W, meta: 0, down: true },
     { frame: 450, player: 1, key: W, meta: 0, down: false },
     { frame: 455, player: 1, key: Q, meta: 0, down: false },
+    // Player 1 swings with K too, then walks with G and runs again.
+    { frame: 457, player: 0, key: K, meta: 0 },
+    { frame: 458, player: 0, key: G, meta: 0 },
+    { frame: 459, player: 0, key: G, meta: 0 },
     { frame: 460, player: 0, chat: "-anim 3" },
     { frame: 462, player: 1, chat: "-combo 4 5 6" },
     // Player 1 presses E with nothing in reach (he spawned 350 in front of the Human base's recruiter, a lane aside, past talking range);

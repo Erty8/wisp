@@ -27,6 +27,8 @@ farmTest("both players spawn at their race's base and recruit from its recruiter
   expect(lines.filter((line) => line.startsWith("p1: says WASD moves the Archmage"))).toHaveLength(1);
   expect(lines).toContain("p0: says No visible enemy within 900.");
   expect(lines).toContain("p0: says Squad: holding here.");
+  expect(lines).toContain("p0: says Walking. G to run.");
+  expect(lines).toContain("p0: says Running. G to walk.");
   expect(lines).toContain("p1: says No target: press Tab first.");
   expect(lines).toContain("p1: says Squad: holding here.");
   expect(lines).toContain("p1: says Squad: following you, falling back from any fight.");
