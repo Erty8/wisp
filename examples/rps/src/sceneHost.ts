@@ -6,7 +6,7 @@
 // continues every scene, fight and bounty under way. Each player the engine
 // plays scenes for is a `SceneSeat`: the map's own player record, which
 // carries these fields among its own.
-import type { Bounty, DialogueNode, Framing, LastShot, Scene } from "./dialogue";
+import type { Bounty, DialogueNode, Effect, Framing, LastShot, Scene } from "./dialogue";
 import type { Letterbox } from "./letterbox";
 import { type Point, type Role, fourCC } from "./rules";
 import { DEAD_LIFE } from "./constants";
@@ -132,8 +132,8 @@ export interface SceneHost {
   readonly sidekick: (seat: SceneSeat) => { readonly unit: unit; readonly code: string | undefined } | undefined;
   /** What a scene's placeholders ({hero}, and the map's own) read for this player. */
   readonly lineValues: (seat: SceneSeat) => Readonly<Record<string, string>>;
-  /** A `recruit` effect: two of a role's soldiers join the hero for a cost. */
-  readonly recruit: (seat: SceneSeat, role: Role, cost: number) => void;
+  /** A `recruit` effect: two soldiers join the hero for a cost (see the effect for whose). */
+  readonly recruit: (seat: SceneSeat, hire: Extract<Effect, { kind: "recruit" }>) => void;
   /** A `spawn` effect: units of a type join the hero's party in a role. */
   readonly join: (seat: SceneSeat, code: string, count: number, role: Role) => void;
   /** A scene comes up (true) or has ended (false): the map hides or brings back its own interface. */

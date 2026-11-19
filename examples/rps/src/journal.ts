@@ -5,6 +5,8 @@
 // else is stored. The same flags give each quest's line in Warcraft's own
 // quest log (`questLog`, ./questLog.ts): under way, or done.
 import { type Condition, meets } from "./dialogue";
+import { BASES, questFlag, veteransFlag } from "./bases";
+import { RACES } from "./roster";
 
 /** A quest the journal can list: its title, when it is active, and what to do next. */
 export interface JournalEntry {
@@ -24,6 +26,11 @@ export const JOURNAL: readonly JournalEntry[] = [
   { title: "Silverpine Gate", when: [{ flag: "gateEnforced" }, { notFlag: "gateSettled" }], objective: "Drive off the blood elf exiles." },
   { title: "Blood in the Timberland", when: [{ flag: "campAssault" }, { notFlag: "campCleared" }], objective: "Clear the troll camp on the ridge." },
   { title: "The Ogre Tax", when: [{ flag: "ogreFight" }, { notFlag: "ogreBeaten" }], objective: "Defeat Gorm-and-Grum at the quarry." },
+  // Each race base's quest, from its data.
+  ...BASES.map((base) => {
+    const race = RACES[base.race]?.name ?? "";
+    return { title: base.quest.title, when: [{ flag: questFlag(race) }, { notFlag: veteransFlag(race) }], objective: `Defeat the ${base.quest.foes} at ${base.quest.objective.name}.` };
+  }),
 ];
 
 /** The quests a player with `flags` is in the middle of, in the journal's order. */

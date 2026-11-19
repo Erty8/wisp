@@ -2,7 +2,7 @@ import { assertEquals, test } from "wisp/src/runtime/testing";
 import {
   dragYaw, barWidth, nextSkill, percentOf, CAMERA_PRESETS, COMBAT_HOLD_MS, OUTPOST_FROM_MINE, isHomeMine, outpostBeside, GUARD_LIMIT, LEASH, describeCamera, START_YAW, TRIG_SCALE,
   cameraZOffset, captureOwner, combatAfter, cosine, distanceSquared, ease, eyePoint, fourCC, guardSlot, income, isqrt, moveAngle,
-  movePoint, needsRegroup, nextTarget, occludes, sine, followYaw, vanguardSlot, canLearn, rankText, DEFAULT_CAMERA,
+  movePoint, needsRegroup, nextTarget, occludes, sine, followYaw, followSlot, canLearn, rankText, DEFAULT_CAMERA,
 } from "./rules";
 
 const HERO = { x: 1000, y: -500 };
@@ -101,24 +101,26 @@ test("rps rules: trees occlude within 350 of the eye or of the sight line to the
   assertEquals(occludes({ x: 0, y: 0 }, { x: 919, y: 919 }, { x: 800, y: 200 }), false, "diagonal sight, 424 off it");
 });
 
-test("[property] rps rules: vanguard melee stand 180 ahead in a centered line, ranged 150 behind and flanking", () => {
+test("[property] rps rules: a following squad stands behind the hero, out of his way: melee 160 back in a centered line, ranged 300 back and to the sides", () => {
   for (let yaw = 0; yaw < 3600; yaw += 450) {
-    const line = [0, 1, 2].map((rank) => vanguardSlot(HERO, yaw, "melee", rank, 3));
-    const middle = line[1];
-    assertEquals(Math.abs(Math.sqrt(distanceSquared(HERO, middle ?? HERO)) - 180) <= 2, true, `yaw ${yaw}: middle 180 ahead`);
-    assertEquals(Math.abs(Math.sqrt(distanceSquared(line[0] ?? HERO, line[2] ?? HERO)) - 200) <= 2, true, `yaw ${yaw}: line 200 wide`);
-    const [right, left] = [0, 1].map((rank) => vanguardSlot(HERO, yaw, "ranged", rank, 2));
-    for (const flank of [right, left]) {
-      const back = flank ?? HERO;
-      const along = ((back.x - HERO.x) * cosine(yaw) + (back.y - HERO.y) * sine(yaw)) / TRIG_SCALE;
-      assertEquals(Math.abs(along + 150) <= 2, true, `yaw ${yaw}: ranged 150 behind`);
-    }
+    const along = (point: { x: number; y: number }) => ((point.x - HERO.x) * cosine(yaw) + (point.y - HERO.y) * sine(yaw)) / TRIG_SCALE;
     const side = (point: { x: number; y: number }) => (-(point.x - HERO.x) * sine(yaw) + (point.y - HERO.y) * cosine(yaw)) / TRIG_SCALE;
+    const line = [0, 1, 2].map((rank) => followSlot(HERO, yaw, "melee", rank, 3));
+    const middle = line[1];
+    assertEquals(Math.abs(along(middle ?? HERO) + 160) <= 2 && Math.abs(side(middle ?? HERO)) <= 2, true, `yaw ${yaw}: middle melee 160 straight behind`);
+    assertEquals(Math.abs(Math.sqrt(distanceSquared(line[0] ?? HERO, line[2] ?? HERO)) - 200) <= 2, true, `yaw ${yaw}: line 200 wide`);
+    const [right, left] = [0, 1].map((rank) => followSlot(HERO, yaw, "ranged", rank, 2));
+    for (const flank of [right, left]) assertEquals(Math.abs(along(flank ?? HERO) + 300) <= 2, true, `yaw ${yaw}: ranged 300 behind`);
     assertEquals(Math.abs(side(right ?? HERO) + 120) <= 2, true, `yaw ${yaw}: first ranged on the right`);
     assertEquals(Math.abs(side(left ?? HERO) - 120) <= 2, true, `yaw ${yaw}: second on the left`);
+    for (let count = 1; count <= 4; count++) {
+      for (let rank = 0; rank < count; rank++) {
+        for (const role of ["melee", "ranged"] as const) assertEquals(along(followSlot(HERO, yaw, role, rank, count)) < -100, true, `yaw ${yaw}: ${role} ${rank} of ${count} behind`);
+      }
+    }
   }
-  const north = vanguardSlot(HERO, 900, "melee", 0, 2);
-  assertEquals(`${north.x},${north.y}`, `${HERO.x - 50},${HERO.y + 180}`, "two melee facing north: the first on the left");
+  const north = followSlot(HERO, 900, "melee", 0, 2);
+  assertEquals(`${north.x},${north.y}`, `${HERO.x - 50},${HERO.y - 160}`, "two melee, the hero facing north: the first on the left");
 });
 
 test("[property] rps rules: tight guard slots ring the hero within 200, and the squad regroups only when it strays", () => {

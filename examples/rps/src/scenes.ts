@@ -396,7 +396,7 @@ function applyEffect(seat: SceneSeat, run: SceneRun, effect: Effect): void {
   if (effect.kind === "gold") {
     SetPlayerState(seat.player, PLAYER_STATE_RESOURCE_GOLD, Math.max(0, goldOf(seat) + effect.amount));
     say(seat, effect.amount >= 0 ? `${run.npcName} gives you ${effect.amount} gold.` : `You give ${run.npcName} ${-effect.amount} gold.`);
-  } else if (effect.kind === "recruit") host().recruit(seat, effect.role, effect.cost);
+  } else if (effect.kind === "recruit") host().recruit(seat, effect);
   else if (effect.kind === "flag") {
     if (effect.value === false) flagsOf(seat).delete(effect.flag);
     else flagsOf(seat).add(effect.flag);

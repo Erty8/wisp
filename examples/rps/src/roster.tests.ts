@@ -18,6 +18,8 @@ test("[property] rps roster: four races of four heroes and eight tavern heroes, 
     assertEquals(race.army.filter((soldier) => soldier.role === "melee").length, 2, `${race.name} melee`);
     assertEquals(race.army.filter((soldier) => soldier.role === "ranged").length, 2, `${race.name} ranged`);
     for (const soldier of race.army) assertEquals(soldier.plural.length > 0, true, `${soldier.code} plural`);
+    assertEquals(race.veterans.filter((soldier) => soldier.role === "melee").length, 2, `${race.name} veteran melee`);
+    assertEquals(race.veterans.filter((soldier) => soldier.role === "ranged").length, 2, `${race.name} veteran ranged`);
   }
   for (const hero of allHeroes()) {
     assertEquals(hero.code.length, 4, `${hero.name} code`);

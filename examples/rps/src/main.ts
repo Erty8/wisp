@@ -2,7 +2,7 @@
 // player has one hero and a small retinue, a damped third-person camera that
 // swings in behind the hero as he runs, WASD movement relative to the camera,
 // Tab soft-targeting, manual attacks and a guard (./combat.ts), a spell bar,
-// squad stances and capturable income outposts. Each player first picks a
+// squad orders (Z hold, X follow, C attack) and capturable income outposts. Each player first picks a
 // race and a hero (./picker.ts, ./roster.ts); the hero spawns alone on the
 // player's start location and recruits his race's soldiers from the
 // quartermaster beside it, in a dialogue. E beside an NPC plays a personal
@@ -28,32 +28,36 @@ import { activeQuests, journalText, questLog } from "./journal";
 import { syncQuestLog } from "./questLog";
 import { type Picker, createPicker, pickerAction, showPicker } from "./picker";
 import { choiceOf, createLetterbox } from "./letterbox";
-import { RECRUIT_SCENE, STARTING_GOLD, TAVERN_SCENE, WANDERERS, recruitOutcome } from "./dialogue";
+import { type Effect, STARTING_GOLD, TAVERN_SCENE, WANDERERS, recruitOutcome } from "./dialogue";
+import { SELLSWORD_SCENE, TAVERN_HERO_FLAG } from "./tavern";
 import { QUEST_SITES } from "./quests";
+import { BASES, CHATTER_RANGE, baseOfRace, baseSpawn, chatterOn, nearestTavern, raceFlag, sparrerOnBeat, tavernSpawn } from "./bases";
 import { type Npc, type SceneSeat, type SceneState, flagsOf, goldOf, installScenes } from "./sceneHost";
 import { chooseLine, endScene, fadeTick, playNearest, sceneTick, skipLine, startScene, talkCheck, talkTarget, voiceSynced } from "./scenes";
 import { questTick } from "./questRuntime";
 import { KILL_CAM_RANGE, KILL_CAM_TICKS, SLOW_MOTION_RADIUS, SLOW_MOTION_SCALE, endsFight, killCamShot } from "./killcam";
-import { type Hero, type Race, type Skill, DEFAULT_PICK, HERO_LISTS, PICK_SECONDS, disabledIcon, heroList, heroListNames, heroOf, icon, raceOf, rawcode } from "./roster";
+import { type Hero, type Race, type Skill, DEFAULT_PICK, HERO_LISTS, PICK_SECONDS, TAVERN_HEROES, disabledIcon, heroList, heroListNames, heroOf, icon, raceOf, rawcode } from "./roster";
 import {
   AUTO_TARGET_RANGE, BLOCK_MANA, CLICK_SETTLE_TICKS, FINISHER_KNOCKBACK, GUARD_POSE_TICKS, GUARD_SPEED_DENOMINATOR, GUARD_SPEED_NUMERATOR, HIT_STOP_TICKS, IMPACT_TICKS,
   PARRY_COUNTER_DAMAGE, PARRY_KNOCKBACK, RECOIL_TICKS, STAGGER_TICKS, SWING_HALF_ANGLE, SWING_RANGE, bufferable, canAct, stepIn, swingTicks,
   atan2Tenths, attackFacing, autoTarget, ringCorner, ringSize, blockedDamage, guardOutcome, inCone, isSpellBarClick, nextComboStep, swingDamage,
 } from "./combat";
 import {
-  type Candidate, type Point, type Role, type SkillRanks, type Stance, type Yaw,
+  type Candidate, type Point, type Role, type SkillRanks, type Yaw,
   CAMERA_PERIOD_MS, CAPTURE_RADIUS, DEFAULT_CAMERA, SHAKE_MS, SHAKE_RANGE, FAR_Z, FOOD_CAP, OCCLUSION_RADIUS, START_YAW, TARGET_RANGE, CAMERA_PRESETS, type CameraPreset, describeCamera,
-  cameraZOffset, captureOwner, combatAfter, distanceSquared, eyePoint, fourCC, isHomeMine, outpostBeside, guardSlot, income, movePoint, needsRegroup, nextTarget,
-  canLearn, dragYaw, nextSkill, occludes, offset, percentOf, rankText, vanguardSlot,
+  cameraZOffset, captureOwner, combatAfter, distanceSquared, eyePoint, fourCC, isHomeMine, outpostBeside, income, movePoint, needsRegroup, nextTarget,
+  canLearn, dragYaw, nextSkill, occludes, offset, percentOf, rankText, followSlot,
 } from "./rules";
 import {
-  SEATS, CAMERA_PERIOD, OCCLUSION_PERIOD, STANCE_PERIOD, PICKUP_RANGE, INVENTORY_SLOTS, ARRANGE_DELAY, HUD_PERIOD, CAPTURE_PERIOD, INCOME_PERIOD, MOVE_EVERY_TICKS, DEAD_LIFE, SKILL_KEYS, SHAKE_MAGNITUDE, SHAKE_VELOCITY, SWING_SPEED, COUNTER_SPEED, SLASH_MODEL, PARRY_MODEL, BLOCK_MODEL, GUARD_MODEL, GUARD_WALK_SPEED, RECOIL_SPEED, FLOAT_TEXT_SIZE, FLOAT_TEXT_RISE, ATTACK_ABILITY, OUTPOST, ORDER_MOVE, ORDER_SMART, YAW_PREFIX, TAVERN, GOLD_MINE, CREEPS, ui, RING_TEXTURE, IMAGE_TYPE_SELECTION, TARGET_TINT, VOICE_PREFIX, KEY, KEY_CODES, SKILL_KEY_CODES, PICK_KEYS, CAMERA_KEYS,
+  SEATS, CAMERA_PERIOD, OCCLUSION_PERIOD, STANCE_PERIOD, PICKUP_RANGE, INVENTORY_SLOTS, ARRANGE_DELAY, HUD_PERIOD, CAPTURE_PERIOD, INCOME_PERIOD, MOVE_EVERY_TICKS, DEAD_LIFE, SKILL_KEYS, SHAKE_MAGNITUDE, SHAKE_VELOCITY, SWING_SPEED, COUNTER_SPEED, SLASH_MODEL, PARRY_MODEL, BLOCK_MODEL, GUARD_MODEL, GUARD_WALK_SPEED, RECOIL_SPEED, FLOAT_TEXT_SIZE, FLOAT_TEXT_RISE, ATTACK_ABILITY, SHADOWMELD_ABILITIES, OUTPOST, ORDER_MOVE, ORDER_SMART, YAW_PREFIX, TAVERN, GOLD_MINE, CREEPS, ui, RING_TEXTURE, IMAGE_TYPE_SELECTION, TARGET_TINT, VOICE_PREFIX, BARK_TEXT_SIZE, KEY, KEY_CODES, SKILL_KEY_CODES, PICK_KEYS, CAMERA_KEYS,
 } from "./constants";
 
 
 interface Member {
   readonly unit: unit;
   readonly role: Role;
+  /** His unit type, which may be another race's: a base sells its own race's soldiers. */
+  readonly code: string;
 }
 
 /** A swing in progress: its aim (tenths of a degree), combo step and the ticks it lands and ends on. */
@@ -113,7 +117,8 @@ interface Seat extends SceneSeat {
   yaw: Yaw;
   /** Milliseconds the squad stays in combat after its last hit. */
   combatMs: number;
-  stance: Stance;
+  /** What the squad is doing: following the hero, holding where Z stopped it, or attacking the target C named. */
+  squadOrder: "follow" | "hold" | "attack";
   target: unit | undefined;
   /** The ring under the target and its size, shown to this player alone. */
   ring?: { readonly image: image; readonly size: number } | undefined;
@@ -146,6 +151,11 @@ interface RpsState extends SceneState {
   comboAnimations?: readonly number[] | undefined;
   /** Every player's race and hero pick, until they have picked. */
   readonly picks: Pick[];
+  /** Each base's sparring pair and the people who call out its chatter, by base, and the base life tick's beat (`baseLifeTick`). */
+  baseLife?: { readonly sparring: readonly unit[]; readonly speakers: readonly unit[] }[] | undefined;
+  baseBeat?: number | undefined;
+  /** Where the base map's taverns stand, found as the NPCs are placed (one south of the center without any): tavern heroes spawn at the nearest. */
+  taverns?: Point[] | undefined;
   /**
    * This client's own right-mouse drag: the pointer's last X, the yaw dragged
    * to and the last yaw sent. Local to each client, it only ever turns the
@@ -801,7 +811,8 @@ function occlusionTick(): void {
   }
 }
 
-// Squad: stances every 0.5 s, Tab targets, F attacks.
+// Squad: it follows the hero in formation every 0.5 s; Tab targets; Z holds it
+// where it stands, X calls it back to follow, C sends it at the target.
 
 function dropTarget(seat: Seat): void {
   if (seat.ring !== undefined) DestroyImage(seat.ring.image);
@@ -884,14 +895,35 @@ function attackTarget(seat: Seat): void {
     return;
   }
   for (const member of seat.squad) if (alive(member.unit)) IssueTargetOrder(member.unit, "attack", target);
-  // The squad is in combat from the order on, so the stance tick doesn't call it back mid-swing.
+  // The squad attacks until the target falls (`stanceTick` then has it follow again), and is in combat from the order on.
+  seat.squadOrder = "attack";
   seat.combatMs = combatAfter(seat.combatMs, 0, true);
+  say(seat, "Squad: attacking your target.");
 }
 
-function setStance(seat: Seat, stance: Stance): void {
-  seat.stance = stance;
-  say(seat, stance === "vanguard" ? "Stance: Vanguard. Melee in front, ranged behind." : "Stance: Tight Guard. The squad stays by the hero.");
+/** Each living squad member and his slot in the follow formation, all behind the hero, out of his way: melee in a line, ranged further back and to the sides (`followSlot`). */
+function squadSlots(seat: Seat): { readonly member: Member; readonly slot: Point }[] {
+  const hero = pointOf(seat.hero);
+  const living = seat.squad.filter((member) => alive(member.unit));
+  const counts = { melee: living.filter((member) => member.role === "melee").length, ranged: living.filter((member) => member.role === "ranged").length };
+  const ranks = { melee: 0, ranged: 0 };
+  return living.map((member) => ({ member, slot: followSlot(hero, seat.yaw.current, member.role, ranks[member.role]++, counts[member.role]) }));
 }
+
+/** Z: the squad stops where it stands and holds there, fighting what comes but chasing nothing, until X or C. */
+function holdSquad(seat: Seat): void {
+  seat.squadOrder = "hold";
+  for (const member of seat.squad) if (alive(member.unit)) IssueImmediateOrder(member.unit, "holdposition");
+  say(seat, "Squad: holding here.");
+}
+
+/** X: the squad follows the hero again, walking (not fighting) back to its formation at once, out of any fight. */
+function followSquad(seat: Seat): void {
+  seat.squadOrder = "follow";
+  for (const { member, slot } of squadSlots(seat)) IssuePointOrder(member.unit, "move", slot.x, slot.y);
+  say(seat, "Squad: following you, falling back from any fight.");
+}
+
 
 /**
  * The nearest item lying on the ground within PICKUP_RANGE of the hero, and
@@ -967,27 +999,64 @@ function itemViews(seat: Seat): ItemView[] {
   return views;
 }
 
+/**
+ * Every 0.5 s, the bases go about their day: one of each sparring pair swings
+ * at the other in turn (`sparrerOnBeat`), and every 8 s someone at each base
+ * calls out a line of its chatter (`chatterOn`), over his head, to the players
+ * whose hero is within CHATTER_RANGE.
+ */
+function baseLifeTick(): void {
+  const rps = state();
+  const beat = (rps.baseBeat ?? 0) + 1;
+  rps.baseBeat = beat;
+  const swinger = sparrerOnBeat(beat);
+  (rps.baseLife ?? []).forEach((life, index) => {
+    const base = BASES[index];
+    if (base === undefined) return;
+    const sparrer = swinger === undefined ? undefined : life.sparring[swinger];
+    if (sparrer !== undefined && alive(sparrer)) {
+      SetUnitAnimation(sparrer, "attack");
+      QueueUnitAnimation(sparrer, "stand ready");
+    }
+    const call = chatterOn(beat, index, base.life.chatter.length, life.speakers.length);
+    const speaker = call === undefined ? undefined : life.speakers[call.speaker];
+    if (call === undefined || speaker === undefined || !alive(speaker)) return;
+    const at = pointOf(speaker);
+    const tag = CreateTextTag();
+    SetTextTagText(tag, base.life.chatter[call.line] ?? "", BARK_TEXT_SIZE);
+    SetTextTagPosUnit(tag, speaker, 40);
+    SetTextTagColor(tag, 230, 230, 230, 255);
+    SetTextTagPermanent(tag, false);
+    SetTextTagLifespan(tag, 4.0);
+    SetTextTagFadepoint(tag, 3.0);
+    // Every client makes the tag and reads every hero alike; each shows it only if his own hero is near.
+    SetTextTagVisibility(tag, false);
+    for (const seat of rps.seats) {
+      const near = distanceSquared(pointOf(seat.hero), at) <= CHATTER_RANGE * CHATTER_RANGE;
+      if (near && isLocal(seat)) SetTextTagVisibility(tag, true);
+    }
+  });
+}
+
 function stanceTick(): void {
   questTick();
+  baseLifeTick();
   for (const seat of state().seats) {
     if (seat.scene !== undefined) continue;
     talkCheck(seat);
     if (seat.target !== undefined && !alive(seat.target)) dropTarget(seat);
     if (!alive(seat.hero)) continue;
+    // An attack ends when its target falls: the squad follows again.
+    if (seat.squadOrder === "attack" && seat.target === undefined) seat.squadOrder = "follow";
+    if (seat.squadOrder !== "follow") continue;
     const hero = pointOf(seat.hero);
-    const living = seat.squad.filter((member) => alive(member.unit));
-    const counts = { melee: living.filter((member) => member.role === "melee").length, ranged: living.filter((member) => member.role === "ranged").length };
-    const ranks = { melee: 0, ranged: 0 };
     const inCombat = seat.combatMs > 0;
-    living.forEach((member, index) => {
-      const slot = seat.stance === "vanguard"
-        ? vanguardSlot(hero, seat.yaw.current, member.role, ranks[member.role]++, counts[member.role])
-        : guardSlot(hero, seat.yaw.current, index, living.length);
-      if (!needsRegroup(seat.stance, pointOf(member.unit), slot, hero, inCombat)) return;
-      // Out of combat the squad walks to its slots; in combat only a unit past the
-      // leash is ordered, and it fights its way back.
-      IssuePointOrder(member.unit, inCombat ? "attack" : "move", slot.x, slot.y);
-    });
+    for (const { member, slot } of squadSlots(seat)) {
+      if (!needsRegroup("vanguard", pointOf(member.unit), slot, hero, inCombat)) continue;
+      // Out of combat the squad walks to its slots; in combat it fights near the
+      // hero, and a unit past the leash walks back rather than fighting its way back.
+      IssuePointOrder(member.unit, "move", slot.x, slot.y);
+    }
   }
 }
 
@@ -1159,9 +1228,9 @@ function key(down: boolean): void {
   else if (code === KEY.tab) cycleTarget(seat);
   else if (code === KEY.e) interact(seat);
   else if (code === KEY.i) toggleInventory(seat);
-  else if (code === KEY.f) attackTarget(seat);
-  else if (code === KEY.one) setStance(seat, "vanguard");
-  else if (code === KEY.two) setStance(seat, "guard");
+  else if (code === KEY.z) holdSquad(seat);
+  else if (code === KEY.x) followSquad(seat);
+  else if (code === KEY.c) attackTarget(seat);
   else if (SKILL_KEY_CODES.includes(code)) castSkill(seat, SKILL_KEY_CODES.indexOf(code));
   else if (code === KEY.l) learnNext(seat);
   else if (code === KEY.space) startSwing(seat, undefined);
@@ -1173,7 +1242,7 @@ function key(down: boolean): void {
 // install()): its hero standing down, his party, his placeholders, recruits
 // and its interface giving way to the letterbox.
 
-/** Places an NPC for every scene: by each tavern the base map has, facing the center, or near the center without one. */
+/** Places the sergeant and the sellsword by each tavern the base map has, or by a stand-in spot south of the center without one. */
 function placeNpcs(centerX: number, centerY: number): void {
   const rps = state();
   GroupEnumUnitsInRect(rps.group, bj_mapInitialPlayableArea, rps.everything);
@@ -1184,14 +1253,18 @@ function placeNpcs(centerX: number, centerY: number): void {
     if (GetUnitTypeId(placed) === TAVERN) taverns.push(pointOf(placed));
   }
   const center = { x: Math.floor(centerX), y: Math.floor(centerY) };
-  const spots = taverns.length > 0
-    ? taverns.map((tavern) => offset(tavern.x, tavern.y, atan2Tenths(center.y - tavern.y, center.x - tavern.x), 300, 0))
-    : [{ x: center.x, y: center.y - 300 }];
-  for (const spot of spots) {
-    const npc = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(TAVERN_SCENE.npcCode), spot.x, spot.y, 270.0);
-    BlzSetUnitName(npc, TAVERN_SCENE.npcName);
-    SetUnitInvulnerable(npc, true);
-    rps.npcs.push({ unit: npc, scene: TAVERN_SCENE, name: TAVERN_SCENE.npcName, code: TAVERN_SCENE.npcCode, extras: [] });
+  // A map without a tavern gets a stand-in spot 600 south of the center, so the sergeant, the sellsword and tavern heroes still have a place.
+  if (taverns.length === 0) taverns.push({ x: center.x, y: center.y - 600 });
+  rps.taverns = taverns;
+  for (const tavern of taverns) {
+    const toCenter = atan2Tenths(center.y - tavern.y, center.x - tavern.x);
+    // The sergeant 300 out toward the center; the sellsword beside him, on his left.
+    for (const [scene, spot] of [[TAVERN_SCENE, offset(tavern.x, tavern.y, toCenter, 300, 0)], [SELLSWORD_SCENE, offset(tavern.x, tavern.y, toCenter, 300, 250)]] as const) {
+      const npc = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(scene.npcCode), spot.x, spot.y, 270.0);
+      BlzSetUnitName(npc, scene.npcName);
+      SetUnitInvulnerable(npc, true);
+      rps.npcs.push({ unit: npc, scene, name: scene.npcName, code: scene.npcCode, extras: [] });
+    }
   }
 }
 
@@ -1210,17 +1283,6 @@ function placeWanderers(center: Point): void {
     SetUnitInvulnerable(npc, true);
     rps.npcs.push({ unit: npc, scene, name: scene.npcName, code: scene.npcCode, extras: [] });
   }
-}
-
-/** A quartermaster of the player's race stands 400 from his start toward the center, recruiting for the hero (RECRUIT_SCENE). */
-function placeQuartermaster(seat: Seat, start: Point): void {
-  const rps = state();
-  const code = seat.race.army.find((soldier) => soldier.role === "melee")?.code ?? RECRUIT_SCENE.npcCode;
-  const spot = offset(start.x, start.y, atan2Tenths(rps.center.y - start.y, rps.center.x - start.x), 400, 0);
-  const npc = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(code), spot.x, spot.y, (atan2Tenths(start.y - spot.y, start.x - spot.x)) / 10);
-  BlzSetUnitName(npc, RECRUIT_SCENE.npcName);
-  SetUnitInvulnerable(npc, true);
-  rps.npcs.push({ unit: npc, scene: RECRUIT_SCENE, name: RECRUIT_SCENE.npcName, code, extras: [] });
 }
 
 /** What `-off` can switch off, to find which part of the map changes how something looks. */
@@ -1300,6 +1362,67 @@ function placeQuestSites(center: Point): void {
   }
 }
 
+/**
+ * The race bases (`BASES`): each 2000 from the playable area's center, its
+ * hall and barracks behind its recruiter and its guards in front, all
+ * neutral, unhurtable and put where Warcraft's pathing lets them stand. The
+ * recruiter faces the center and plays the base's scene; the guards stand with
+ * him (his company) and face out; the quest giver stands at his side and
+ * plays the base's quest.
+ */
+function placeBases(center: Point): void {
+  const rps = state();
+  for (const base of BASES) {
+    const spot = offset(center.x, center.y, base.angle, base.distance, 0);
+    const at = (part: { readonly out: number; readonly side: number }) => offset(spot.x, spot.y, base.angle, part.out, part.side);
+    for (const building of base.buildings) {
+      const place = at(building);
+      SetUnitInvulnerable(CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(building.code), place.x, place.y, 270.0), true);
+    }
+    const { scene } = base;
+    const npc = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(scene.npcCode), spot.x, spot.y, (base.angle + 1800) / 10);
+    shove(npc, spot);
+    BlzSetUnitName(npc, scene.npcName);
+    SetUnitInvulnerable(npc, true);
+    const guards: unit[] = [];
+    for (const guard of base.guards) {
+      const place = at(guard);
+      const unit = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(guard.code), place.x, place.y, base.angle / 10);
+      shove(unit, place);
+      SetUnitInvulnerable(unit, true);
+      guards.push(unit);
+    }
+    // The base's life: workers on their rounds and guards on patrol (Warcraft's patrol order walks them back
+    // and forth for good), and a sparring pair facing each other across the side axis.
+    const walkers: unit[] = [];
+    for (const rounds of [...base.life.workers, ...base.life.patrols]) {
+      const place = at(rounds), to = at(rounds.to);
+      const unit = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(rounds.code), place.x, place.y, atan2Tenths(to.y - place.y, to.x - place.x) / 10);
+      SetUnitInvulnerable(unit, true);
+      IssuePointOrder(unit, "patrol", to.x, to.y);
+      walkers.push(unit);
+    }
+    const sparring = base.life.sparring.map((part, index) => {
+      const place = at(part);
+      const unit = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(part.code), place.x, place.y, (base.angle + (index === 0 ? 900 : 2700)) / 10);
+      SetUnitInvulnerable(unit, true);
+      return unit;
+    });
+    rps.npcs.push({ unit: npc, scene, name: scene.npcName, code: scene.npcCode, extras: [...guards, ...walkers, ...sparring] });
+    const lives = rps.baseLife ?? [];
+    rps.baseLife = lives;
+    lives.push({ sparring, speakers: [...guards, ...walkers, ...sparring] });
+    // The quest giver at the recruiter's side, facing the center.
+    const { questScene, giver } = base;
+    const giverAt = at(giver);
+    const questNpc = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(questScene.npcCode), giverAt.x, giverAt.y, (base.angle + 1800) / 10);
+    shove(questNpc, giverAt);
+    BlzSetUnitName(questNpc, questScene.npcName);
+    SetUnitInvulnerable(questNpc, true);
+    rps.npcs.push({ unit: questNpc, scene: questScene, name: questScene.npcName, code: questScene.npcCode, extras: [] });
+  }
+}
+
 /** What a scene's placeholders read for this player: his hero's name and his race's soldiers. */
 function lineValues(seat: Seat): Readonly<Record<string, string>> {
   const plural = (role: Role) => seat.race.army.find((soldier) => soldier.role === role)?.plural ?? "soldiers";
@@ -1307,21 +1430,28 @@ function lineValues(seat: Seat): Readonly<Record<string, string>> {
 }
 
 /**
- * Recruits a role's soldiers from the hero's race into his party, two by his
- * side, for their cost: not again while he leads them, nor without the gold.
+ * Recruits two soldiers into the hero's party, by his side, for their cost:
+ * a role's of his own race, or with `race` that race's (a base's), its
+ * veterans with `veteran`, or with `soldier` that unit type (a sellsword's).
+ * Not again while he leads soldiers of that type, nor without the gold.
  */
-function recruit(seat: Seat, role: Role, cost: number): void {
-  const soldiers = seat.race.army.filter((soldier) => soldier.role === role);
+function recruit(seat: Seat, hire: Extract<Effect, { kind: "recruit" }>): void {
+  const { role, cost } = hire;
+  const from = hire.race === undefined ? seat.race : raceOf(hire.race);
+  const soldiers = hire.soldier !== undefined
+    ? [{ ...hire.soldier, role }, { ...hire.soldier, role }]
+    : (hire.veteran === true ? from.veterans : from.army).filter((soldier) => soldier.role === role);
   const name = soldiers[0]?.plural ?? "soldiers";
+  const code = soldiers[0]?.code;
   const gold = goldOf(seat);
-  const outcome = recruitOutcome(gold, cost, seat.squad.some((member) => member.role === role && alive(member.unit)));
+  const outcome = recruitOutcome(gold, cost, seat.squad.some((member) => member.code === code && alive(member.unit)));
   if (outcome === "already") return say(seat, `You already lead ${name}.`);
   if (outcome === "poor") return say(seat, `Not enough gold: ${name} cost ${cost}.`);
   SetPlayerState(seat.player, PLAYER_STATE_RESOURCE_GOLD, gold - cost);
   const at = pointOf(seat.hero);
   soldiers.forEach((soldier, index) => {
     const spot = offset(at.x, at.y, seat.yaw.current + 1800, 120, (index * 2 - 1) * 90);
-    seat.squad.push({ unit: CreateUnit(seat.player, rawcode(soldier.code), spot.x, spot.y, seat.yaw.current / 10), role });
+    seat.squad.push({ unit: CreateUnit(seat.player, rawcode(soldier.code), spot.x, spot.y, seat.yaw.current / 10), role, code: soldier.code });
   });
   say(seat, `Two ${name} join you.`);
 }
@@ -1391,10 +1521,16 @@ function finishPick(pick: Pick, hero: Hero): void {
   const rps = state();
   pick.done = true;
   BlzFrameSetVisible(pick.menu.root, false);
-  const start = startOf(pick.id);
+  // A race hero spawns at his race's base, whose recruiter gives him soldiers
+  // free. A tavern hero belongs to no base: he spawns at the tavern nearest his
+  // start location, where the sellsword gives him his first mercenaries free.
+  const tavern = TAVERN_HEROES.indexOf(hero) < 0 ? undefined : nearestTavern(rps.taverns ?? [], startOf(pick.id));
+  const start = tavern === undefined ? baseSpawn(rps.center, baseOfRace(pick.race), pick.id) : tavernSpawn(rps.center, tavern, pick.id);
   const seat = spawnSeat(pick.id, start.x, start.y, raceOf(pick.race), hero);
+  shove(seat.hero, start);
   rps.seats.push(seat);
-  placeQuartermaster(seat, start);
+  // His scenes know what he is: kin to his race's base, or a tavern hero, kin to none.
+  flagsOf(seat).add(tavern === undefined ? raceFlag(seat.race.name) : TAVERN_HERO_FLAG);
   seat.hud = createHud(seat.id, rps.clicks);
   seat.letterbox = createLetterbox(seat.id, rps.clicks);
   BlzFrameSetVisible(seat.hud.root, isLocal(seat));
@@ -1403,8 +1539,11 @@ function finishPick(pick: Pick, hero: Hero): void {
     SetCameraTargetController(seat.hero, 0, 0, false);
     applyCamera(seat, heroX, heroY);
   }
+  const party = tavern === undefined
+    ? `Your party is empty: press E by your base's recruiter for soldiers (free to your own race), and by its quest giver for work that unlocks its veterans.`
+    : `Your party is empty: press E by the sellsword at the tavern, whose first contract is free; the race bases sell their soldiers too.`;
   const keys = seat.heroInfo.skills.map((skill, index) => skill.targeting === "passive" ? `${skill.name} (passive)` : `${SKILL_KEYS[index]} ${skill.name}`).join(", ");
-  say(seat, `WASD moves the ${seat.heroInfo.name}, hold the right mouse button and drag to turn the camera, left click or Space swings, hold Q to guard (early: parry), Tab targets, F sends the squad at it, 1 Vanguard, 2 Tight Guard. Skills: ${keys}; click the spell bar too, + or L learns. 6 to 0 and - switch cameras. E talks to whoever is near or picks up an item, I opens your inventory. Your party is empty: press E by the quartermaster nearby to recruit soldiers, and by the sergeant at a tavern to talk (Space skips a line, 1 to 4 choose, Esc leaves). Hold outposts for gold.`);
+  say(seat, `WASD moves the ${seat.heroInfo.name}, hold the right mouse button and drag to turn the camera, left click or Space swings, hold Q to guard (early: parry), Tab targets; your squad: Z holds here, X follows you (and falls back from a fight), C attacks your target. Skills: ${keys}; click the spell bar too, + or L learns. 6 to 0 and - switch cameras. E talks to whoever is near or picks up an item, I opens your inventory. ${party} Press E by the sergeant at a tavern to talk (Space skips a line, 1 to 4 choose, Esc leaves). Hold outposts for gold.`);
 }
 
 // Outposts: capture every second, income every five.
@@ -1501,16 +1640,16 @@ export function install(this: void): void {
     sidekick: (scene) => {
       const seat = seatFor(scene);
       const member = seat.squad.find((candidate) => alive(candidate.unit));
-      return member === undefined ? undefined : { unit: member.unit, code: seat.race.army.find((soldier) => soldier.role === member.role)?.code };
+      return member === undefined ? undefined : { unit: member.unit, code: member.code };
     },
     lineValues: (scene) => lineValues(seatFor(scene)),
-    recruit: (scene, role, cost) => recruit(seatFor(scene), role, cost),
+    recruit: (scene, hire) => recruit(seatFor(scene), hire),
     join: (scene, code, count, role) => {
       const seat = seatFor(scene);
       const hero = pointOf(seat.hero);
       for (let index = 0; index < count; index++) {
         const spot = offset(hero.x, hero.y, seat.yaw.current + 1800, 140, (index * 2 - count + 1) * 80);
-        seat.squad.push({ unit: CreateUnit(seat.player, rawcode(code), spot.x, spot.y, seat.yaw.current / 10), role });
+        seat.squad.push({ unit: CreateUnit(seat.player, rawcode(code), spot.x, spot.y, seat.yaw.current / 10), role, code });
       }
     },
     sceneShown: (scene, shown) => {
@@ -1641,7 +1780,7 @@ function spawnSeat(id: number, x: number, y: number, race: Race, heroInfo: Hero)
     id, player, hero, race, heroInfo, squad, keys: { w: false, a: false, s: false, d: false },
     fight: { swing: undefined, step: 0, recoverTick: 0, guardTick: undefined, poseTick: undefined, frozen: [], thawTick: 0, speed: Math.floor(GetUnitDefaultMoveSpeed(hero)), pending: undefined, barTick: -100, buffered: undefined, impactTicks: IMPACT_TICKS, guardPose: undefined, guardEffect: undefined, staggerUntil: 0 },
     yaw: { current: START_YAW, target: START_YAW },
-    combatMs: 0, stance: "vanguard", target: undefined, hidden: [], shakeMs: 0, camera: DEFAULT_CAMERA, hud: undefined, letterbox: undefined, scene: undefined, talkedTo: undefined,
+    combatMs: 0, squadOrder: "follow", target: undefined, hidden: [], shakeMs: 0, camera: DEFAULT_CAMERA, hud: undefined, letterbox: undefined, scene: undefined, talkedTo: undefined,
   };
 }
 
@@ -1677,6 +1816,10 @@ export function start(this: void): void {
   placeNpcs(centerX, centerY);
   placeWanderers({ x: Math.floor(centerX), y: Math.floor(centerY) });
   placeQuestSites({ x: Math.floor(centerX), y: Math.floor(centerY) });
+  placeBases({ x: Math.floor(centerX), y: Math.floor(centerY) });
+  // NPCs and the units standing with them never move, so a night elf among them
+  // would Shadowmeld at night and vanish: none of them keeps the ability.
+  for (const npc of rps.npcs) for (const unit of [npc.unit, ...npc.extras]) for (const ability of SHADOWMELD_ABILITIES) UnitRemoveAbility(unit, ability);
   // Warcraft's interface parts aren't all in place when the map starts: a
   // published map that rearranges them waits a second, and parts moved at
   // once (the unit info, the portrait's numbers) never showed here.

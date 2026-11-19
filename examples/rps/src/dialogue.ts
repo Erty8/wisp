@@ -41,7 +41,15 @@ export interface Bounty {
  */
 export type Effect =
   | { readonly kind: "gold"; readonly amount: number }
-  | { readonly kind: "recruit"; readonly role: Role; readonly cost: number }
+  /**
+   * Two of a role's soldiers for a cost: the player's own race's, or with
+   * `race` (an index into the roster's RACES) that race's; with `veteran`,
+   * its veterans; with `soldier`, that unit type (a sellsword's mercenaries).
+   */
+  | {
+    readonly kind: "recruit"; readonly role: Role; readonly cost: number; readonly race?: number; readonly veteran?: boolean;
+    readonly soldier?: { readonly code: string; readonly plural: string };
+  }
   | { readonly kind: "flag"; readonly flag: string; readonly value?: boolean }
   | { readonly kind: "spawn"; readonly code: string; readonly count: number; readonly role: Role }
   | {
@@ -221,10 +229,8 @@ export function recruitOutcome(gold: number, cost: number, alreadyLeads: boolean
   return gold >= cost ? "hired" : "poor";
 }
 
-/** Each player's gold at the start, enough to recruit both pairs: 60 for melee, 80 for ranged. */
+/** Each player's gold at the start: a pair of mercenaries, or a pair from another race's base. */
 export const STARTING_GOLD = 150;
-export const MELEE_COST = 60;
-export const RANGED_COST = 80;
 
 /** How long a line stays up, in camera ticks (0.03 s): 2 seconds, plus a tick for every 15th of a second it takes to read at 15 characters a second. */
 export function lineTicks(text: string): number {
@@ -494,34 +500,6 @@ export const TAVERN_SCENE: Scene = {
 };
 
 /**
- * The quartermaster by each player's start: a soldier of the player's race
- * (`npcCode` is filled per player) who offers the race's soldiers for gold,
- * two at a time, until the hero says not now.
- */
-const RECRUIT_CHOICES: readonly Choice[] = [
-  { text: `Hire two {melee} (${MELEE_COST} gold).`, next: "melee", when: [{ gold: MELEE_COST }] },
-  { text: `Hire two {ranged} (${RANGED_COST} gold).`, next: "ranged", when: [{ gold: RANGED_COST }] },
-  { text: "Not now.", next: "later" },
-];
-
-export const RECRUIT_SCENE: Scene = {
-  name: "Recruit",
-  npcName: "Quartermaster",
-  npcCode: "hfoo",
-  start: "offer",
-  openings: [{ when: [{ flag: "seen:Recruit" }], start: "back" }],
-  bark: { text: "Soldiers for hire, {hero}!", mood: "command" },
-  nodes: [
-    { id: "offer", speaker: "npc", mood: "neutral", text: "Volunteers are waiting, {hero}. Coin buys their oath.", choices: RECRUIT_CHOICES },
-    { id: "back", speaker: "npc", mood: "neutral", text: "Back for more, {hero}?", choices: RECRUIT_CHOICES },
-    { id: "melee", speaker: "npc", mood: "confirm", effects: [{ kind: "recruit", role: "melee", cost: MELEE_COST }], text: "Sign here, and they march with you.", next: "more" },
-    { id: "ranged", speaker: "npc", mood: "confirm", effects: [{ kind: "recruit", role: "ranged", cost: RANGED_COST }], text: "Sign here, and they march with you.", next: "more" },
-    { id: "more", speaker: "npc", mood: "question", text: "Anyone else?", choices: RECRUIT_CHOICES },
-    { id: "later", speaker: "hero", mood: "confirm", text: "Not now. I'll be back." },
-  ],
-};
-
-/**
  * Ilyra, a night elf scout: she won't talk to a stranger, but to someone who
  * has agreed to help the sergeant she tells where the patrol went, pays for
  * the road and sets `knowsMines`; after that she only hurries the hero on.
@@ -632,4 +610,4 @@ export const WANDERERS: readonly { readonly scene: Scene; readonly angle: number
 ];
 
 /** Every scene, by name, for the -scene command. */
-export const SCENES: readonly Scene[] = [TAVERN_SCENE, RECRUIT_SCENE, SCOUT_SCENE, MERCENARY_SCENE, HEALER_SCENE];
+export const SCENES: readonly Scene[] = [TAVERN_SCENE, SCOUT_SCENE, MERCENARY_SCENE, HEALER_SCENE];

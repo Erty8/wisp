@@ -31,11 +31,12 @@ export const MOVE_STEP = 250;
 export const TARGET_RANGE = 900;
 export const OCCLUSION_RADIUS = 350;
 
-export const VANGUARD_AHEAD = 180;
-export const VANGUARD_BEHIND = 150;
-/** Melee units stand this far apart along the front line. */
+/** A following squad keeps out of the hero's way: melee this far behind him, ranged further back. */
+export const FOLLOW_MELEE_BEHIND = 160;
+export const FOLLOW_RANGED_BEHIND = 300;
+/** Melee units stand this far apart along their line. */
 export const LINE_SPACING = 100;
-/** Ranged units flank the hero this far to each side, per pair. */
+/** Ranged units stand this far to each side of the hero's track, per pair. */
 export const FLANK_SPACING = 120;
 export const GUARD_LIMIT = 200;
 /** In combat, a squad unit is left to fight unless it strays this far from the hero. */
@@ -241,14 +242,15 @@ export type Stance = "vanguard" | "guard";
 export type Role = "melee" | "ranged";
 
 /**
- * Vanguard: melee units stand in a line 180 units ahead of the hero, centered
- * on the yaw; ranged units hold 150 units behind, alternating right and left,
- * 120 units further out per pair. `rank` counts within the role.
+ * A following squad's slots, all behind the hero so none gets in his way:
+ * melee units stand in a line 160 units behind him, centered on the yaw;
+ * ranged units hold 300 units behind, alternating right and left, 120 units
+ * further out per pair. `rank` counts within the role.
  */
-export function vanguardSlot(hero: Point, yaw: number, role: Role, rank: number, count: number): Point {
-  if (role === "melee") return offset(hero.x, hero.y, yaw, VANGUARD_AHEAD, floorDiv((count - 1 - 2 * rank) * LINE_SPACING, 2));
+export function followSlot(hero: Point, yaw: number, role: Role, rank: number, count: number): Point {
+  if (role === "melee") return offset(hero.x, hero.y, yaw, -FOLLOW_MELEE_BEHIND, floorDiv((count - 1 - 2 * rank) * LINE_SPACING, 2));
   const side = floorMod(rank, 2) === 0 ? -1 : 1;
-  return offset(hero.x, hero.y, yaw, -VANGUARD_BEHIND, side * (floorDiv(rank, 2) + 1) * FLANK_SPACING);
+  return offset(hero.x, hero.y, yaw, -FOLLOW_RANGED_BEHIND, side * (floorDiv(rank, 2) + 1) * FLANK_SPACING);
 }
 
 /** Tight Guard: the squad rings the hero 140 units out, evenly spaced from the yaw. */

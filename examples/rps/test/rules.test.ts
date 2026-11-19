@@ -14,6 +14,8 @@ import "../src/killcam.tests";
 import "../src/quests.tests";
 import "../src/journal.tests";
 import "../src/interact.tests";
+import "../src/bases.tests";
+import "../src/tavern.tests";
 import "../src/units.tests";
 
 for (const { name, run } of registeredTests) test(name, run);

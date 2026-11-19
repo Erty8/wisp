@@ -2,10 +2,10 @@
 // both players, Human in the lobby, pick their race's heroes and a hero
 // (player 1 by keys, player 2 by clicking the picker), player 1 presses L with no skill point, player 2 clicks Storm Bolt on the
 // spell bar with no target, then they walk with W and D held together, press Tab with
-// nobody in range, F with no target, switch stances, then a hot reload,
-// the spell keys (headless, nothing is learned) and A held, which also closes
+// nobody in range, C with no target, order the squad to hold (Z) and follow (X), then a hot reload,
+// the spell keys 1 to 4 (headless, nothing is learned) and A held, which also closes
 // Warcraft's attack cursor. Headless units take no orders and the map has no
-// trees or terrain, so the journey checks the synchronized key handling, stance
+// trees or terrain, so the journey checks the synchronized key handling, squad
 // messages and timers, not where units go or what the camera shows.
 import type { Journey } from "wisp/src/headless/journey";
 import { fourCC } from "../src/rules";
@@ -101,7 +101,7 @@ const THIRD_CHOICE = { x: 0.40625, y: 0.3125 };
 const SECOND_CHOICE = { x: 0.40625, y: 0.34765625 };
 /** Inside a scene's second choice, which spans x 0.54 to 0.79 and y 0.198 to 0.228. */
 const SCENE_SECOND_CHOICE = { x: 0.6640625, y: 0.2109375 };
-const ESCAPE = 0x1b, SPACE = 0x20, E = 0x45, I = 0x49, Q = 0x51, L = 0x4c, W = 0x57, A = 0x41, D = 0x44, TAB = 0x09, F = 0x46, ONE = 0x31, TWO = 0x32, THREE = 0x33, FOUR = 0x34, FIVE = 0x35, NINE = 0x39, ZERO = 0x30, MINUS = 0xbd;
+const ESCAPE = 0x1b, SPACE = 0x20, E = 0x45, I = 0x49, Q = 0x51, L = 0x4c, W = 0x57, A = 0x41, D = 0x44, TAB = 0x09, Z = 0x5a, X = 0x58, C = 0x43, ONE = 0x31, TWO = 0x32, THREE = 0x33, NINE = 0x39, ZERO = 0x30, MINUS = 0xbd;
 
 /** 60 frames a second: about 17 seconds, so every timer fires and both scenes end. */
 export const RPS_JOURNEY: Journey = {
@@ -122,14 +122,14 @@ export const RPS_JOURNEY: Journey = {
     { frame: 150, player: 0, key: D, meta: 0, down: false },
     { frame: 165, player: 0, key: W, meta: 0, down: false },
     { frame: 180, player: 0, key: TAB, meta: 0 },
-    { frame: 190, player: 1, key: F, meta: 0 },
-    { frame: 200, player: 0, key: TWO, meta: 0 },
+    { frame: 190, player: 1, key: C, meta: 0 },
+    { frame: 200, player: 0, key: Z, meta: 0 },
     { frame: 240, reload: true },
-    { frame: 300, player: 1, key: TWO, meta: 0 },
-    { frame: 310, player: 1, key: ONE, meta: 0 },
-    { frame: 320, player: 0, key: THREE, meta: 0 },
-    { frame: 330, player: 0, key: FOUR, meta: 0 },
-    { frame: 340, player: 1, key: FIVE, meta: 0 },
+    { frame: 300, player: 1, key: Z, meta: 0 },
+    { frame: 310, player: 1, key: X, meta: 0 },
+    { frame: 320, player: 0, key: ONE, meta: 0 },
+    { frame: 330, player: 0, key: TWO, meta: 0 },
+    { frame: 340, player: 1, key: THREE, meta: 0 },
     { frame: 350, player: 0, key: A, meta: 0, down: true },
     { frame: 380, player: 0, key: A, meta: 0, down: false },
     { frame: 400, player: 0, key: NINE, meta: 0 },
@@ -150,12 +150,12 @@ export const RPS_JOURNEY: Journey = {
     { frame: 455, player: 1, key: Q, meta: 0, down: false },
     { frame: 460, player: 0, chat: "-anim 3" },
     { frame: 462, player: 1, chat: "-combo 4 5 6" },
-    // Player 1 presses E with nothing in reach (the quartermaster stands 400 off, past talking range);
+    // Player 1 presses E with nothing in reach (he spawned 350 in front of the Human base's recruiter, a lane aside, past talking range);
     // player 2 opens and closes the inventory with I.
     { frame: 464, player: 0, key: E, meta: 0 },
     { frame: 465, player: 1, key: I, meta: 0 },
     { frame: 467, player: 1, key: I, meta: 0 },
-    // Both talk to their quartermaster: player 1 hires Footmen (key 1) and leaves (key 3); player 2 hires
+    // Both, Human, talk to the Human base's recruiter, who gives kin soldiers free: player 1 takes Footmen (key 1) and leaves (key 3); player 2 takes
     // Riflemen with a click, tries them again, and leaves.
     { frame: 470, player: 0, chat: "-scene" },
     { frame: 480, player: 1, chat: "-scene" },
@@ -168,7 +168,7 @@ export const RPS_JOURNEY: Journey = {
     { frame: 530, player: 1, key: SPACE, meta: 0 },
     { frame: 545, player: 1, key: THREE, meta: 0 },
     { frame: 550, player: 0, key: SPACE, meta: 0 },
-    // Player 1 goes back to the quartermaster, who now opens differently, and leaves with Esc.
+    // Player 1 talks to the recruiter again and leaves with Esc.
     { frame: 760, player: 0, chat: "-scene" },
     { frame: 790, player: 0, key: ESCAPE, meta: 0 },
   ],

@@ -78,7 +78,7 @@ that spawns the hero alone, soldiers recruited in a dialogue, a damped third-per
 camera turned by a right-mouse drag, with terrain lift and tree
 occlusion, held-key WASD through key-down and key-up registrations, manual
 swings, aimed shots for ranged heroes, automatic targeting
-and a parrying guard on the mouse, a slow-motion kill cam on the last enemy of a fight, Tab soft targets, squad stances and capturable income outposts, all synchronized
+and a parrying guard on the mouse, a slow-motion kill cam on the last enemy of a fight, Tab soft targets, squad orders and capturable income outposts, all synchronized
 through integer rules; nothing is selected, and the map draws its own
 interface (health and mana bars, a spell bar to cast and learn from, the minimap in the top-right corner), and personal dialogue
 scenes with text-only lines, a shot director that cuts and

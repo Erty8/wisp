@@ -1,7 +1,7 @@
 import { assertEquals, test } from "wisp/src/runtime/testing";
 import { angleGap } from "./combat";
 import {
-  type DialogueNode, HEALER_SCENE, MERCENARY_SCENE, SCOUT_SCENE, WANDERERS, FADE_TICKS, GLIDE_TICKS, RECRUIT_SCENE, SCENES, STARTING_GOLD, TAVERN_SCENE, TALK_DISTANCE, MELEE_COST, RANGED_COST,
+  type DialogueNode, HEALER_SCENE, MERCENARY_SCENE, SCOUT_SCENE, WANDERERS, FADE_TICKS, GLIDE_TICKS, SCENES, STARTING_GOLD, TAVERN_SCENE, TALK_DISTANCE,
   MAX_TAKES, talkTicks, choiceStates, countTakes, recordingFile, directShot, fadeAlpha, fillLine, framing, gestureOf, hasNews, lineTicks, listenerOf, meets, openingOf, recruitOutcome, sceneFraming, shotFace,
   sceneProblems, seenFlag, talkSpot, voiceFile, voiceTicks,
 } from "./dialogue";
@@ -62,16 +62,11 @@ test("rps dialogue: lines fill in the hero and his race's soldiers", () => {
   assertEquals(fillLine("No placeholders.", { hero: "x" }), "No placeholders.", "untouched");
 });
 
-test("rps dialogue: a recruit goes through with the gold, once per role, and the starting gold buys both pairs", () => {
-  assertEquals(recruitOutcome(STARTING_GOLD, MELEE_COST, false), "hired", "can afford");
-  assertEquals(recruitOutcome(MELEE_COST - 1, MELEE_COST, false), "poor", "short");
-  assertEquals(recruitOutcome(500, RANGED_COST, true), "already", "already leads them");
-  assertEquals(STARTING_GOLD >= MELEE_COST + RANGED_COST, true, "both pairs");
-  const offer = RECRUIT_SCENE.nodes.find((node) => node.id === "offer");
-  assertEquals(offer?.choices?.map((choice) => choice.next).join(","), "melee,ranged,later", "the offer");
-  const recruits: string[] = [];
-  for (const node of RECRUIT_SCENE.nodes) for (const effect of node.effects ?? []) if (effect.kind === "recruit") recruits.push(effect.role);
-  assertEquals(recruits.join(","), "melee,ranged", "two recruits");
+test("rps dialogue: a recruit goes through with the gold, unless the hero already leads that type", () => {
+  assertEquals(recruitOutcome(STARTING_GOLD, 120, false), "hired", "can afford");
+  assertEquals(recruitOutcome(119, 120, false), "poor", "short");
+  assertEquals(recruitOutcome(500, 0, true), "already", "already leads them");
+  assertEquals(recruitOutcome(0, 0, false), "hired", "free");
 });
 
 test("rps dialogue: each line plays the next recording of its mood's kind, round the ones the set has", () => {
@@ -143,10 +138,8 @@ test("rps dialogue: conditions read flags and gold; scenes open by them, and cho
   assertEquals(openingOf(TAVERN_SCENE, new Set(), 0), "greet", "the first time");
   assertEquals(openingOf(TAVERN_SCENE, flags, 0), "again", "after agreeing to help");
   assertEquals(openingOf(TAVERN_SCENE, new Set(["insultedSergeant", "helpingSergeant"]), 0), "cold", "the first opening met wins");
-  assertEquals(openingOf(RECRUIT_SCENE, new Set([seenFlag(RECRUIT_SCENE)]), 0), "back", "the quartermaster remembers");
   const choices = [{ text: "a", next: "a" }, { text: "b", next: "b", when: [{ gold: 100 }] }, { text: "c", next: "c", when: [{ flag: "x" }], hidden: true }];
   assertEquals(choiceStates(choices, new Set(), 50).join(","), "open,greyed,hidden", "states");
-  assertEquals(choiceStates(RECRUIT_SCENE.nodes[0]?.choices ?? [], new Set(), MELEE_COST).join(","), "open,greyed,open", "the quartermaster's, with 60 gold");
 });
 
 test("rps dialogue: a scene has news until the player plays it to the end", () => {

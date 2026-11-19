@@ -2,6 +2,8 @@ import { assertEquals, test } from "wisp/src/runtime/testing";
 import { CREEPS, OUTPOST } from "./constants";
 import { type Scene, FACE_HEIGHT, SCENES, TALK_ANIMATION, WANDERERS, gestureOf } from "./dialogue";
 import { QUEST_SITES } from "./quests";
+import { BASES } from "./bases";
+import { SELLSWORDS, SELLSWORD_SCENE } from "./tavern";
 import { RACES, TAVERN_HEROES } from "./roster";
 import { fourCC } from "./rules";
 import { UNITS, faceHeight, gestureFor, talkAnimation, voiceCandidates } from "./units";
@@ -21,10 +23,15 @@ function usedCodes(): string[] {
   for (const hero of TAVERN_HEROES) codes.push(hero.code);
   for (const race of RACES) {
     for (const hero of race.heroes) codes.push(hero.code);
-    for (const soldier of race.army) codes.push(soldier.code);
+    for (const soldier of [...race.army, ...race.veterans]) codes.push(soldier.code);
   }
   for (const scene of SCENES) codes.push(...sceneCodes(scene));
   for (const wanderer of WANDERERS) codes.push(...sceneCodes(wanderer.scene));
+  codes.push(...sceneCodes(SELLSWORD_SCENE), ...SELLSWORDS.map((sellsword) => sellsword.code));
+  for (const base of BASES) {
+    codes.push(...sceneCodes(base.scene), ...sceneCodes(base.questScene));
+    for (const part of [...base.buildings, ...base.guards, ...base.life.workers, ...base.life.patrols, ...base.life.sparring]) codes.push(part.code);
+  }
   for (const site of QUEST_SITES) {
     codes.push(...sceneCodes(site.scene));
     for (const extra of site.extras) codes.push(extra.code);

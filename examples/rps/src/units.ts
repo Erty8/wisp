@@ -63,6 +63,13 @@ export const UNITS: Readonly<Record<string, UnitProfile>> = {
   earc: { name: "Archer", life: 310, voice: [set("NightElf", "Archer")] },
   ugho: { name: "Ghoul", life: 340, voice: [set("Undead", "Ghoul")] },
   ucry: { name: "Crypt Fiend", life: 550, voice: [set("Undead", "CryptFiend")] },
+  // The races' veterans, which their bases offer.
+  otau: { name: "Tauren", life: 1000, voice: [set("Orc", "Tauren")], face: 150 },
+  otbk: { name: "Troll Berserker", life: 450, voice: [set("Orc", "HeadHunter")] },
+  emtg: { name: "Mountain Giant", life: 1400, voice: [set("NightElf", "MountainGiant")], face: 210 },
+  edry: { name: "Dryad", life: 435, voice: [set("NightElf", "Dryad")], face: 90 },
+  uabo: { name: "Abomination", life: 1175, voice: [set("Undead", "Abomination")], face: 120 },
+  unec: { name: "Necromancer", life: 325, voice: [set("Undead", "Necromancer")], face: 70 },
   // NPCs and their companies.
   hmpr: { name: "Priest", life: 290, voice: [set("Human", "Priest")], face: 70 },
   hsor: { name: "Sorceress", life: 400, voice: [set("Human", "Sorceress")], face: 70 },
@@ -78,8 +85,33 @@ export const UNITS: Readonly<Record<string, UnitProfile>> = {
   nfsp: { name: "Forest Troll Shadow Priest", life: 350 },
   nftk: { name: "Forest Troll Warlord", life: 900 },
   hwat: { name: "Water Elemental", life: 525 },
+  nban: { name: "Bandit", life: 240 },
+  nenf: { name: "Enforcer", life: 650 },
+  nwlf: { name: "Timber Wolf", life: 250 },
+  nwlg: { name: "Giant Wolf", life: 450 },
+  nmrl: { name: "Murloc Tiderunner", life: 210 },
+  nmrr: { name: "Murloc Huntsman", life: 450 },
+  nkob: { name: "Kobold", life: 200 },
+  nkol: { name: "Kobold Taskmaster", life: 400 },
   hwt3: { name: "Greater Water Elemental", life: 900 },
   ncop: { name: "Outpost", life: 500 },
+  // The race bases' workers.
+  opeo: { name: "Peon", life: 250, voice: [set("Orc", "Peon")] },
+  ewsp: { name: "Wisp", life: 120 },
+  uaco: { name: "Acolyte", life: 220, voice: [set("Undead", "Acolyte")] },
+  // The race bases' halls, barracks and houses.
+  hhou: { name: "Farm", life: 500 },
+  otrb: { name: "Orc Burrow", life: 600 },
+  emow: { name: "Moon Well", life: 600 },
+  uzig: { name: "Ziggurat", life: 550 },
+  htow: { name: "Town Hall", life: 1500 },
+  hbar: { name: "Barracks", life: 1500 },
+  ogre: { name: "Great Hall", life: 1500 },
+  obar: { name: "Orc Barracks", life: 1200 },
+  etol: { name: "Tree of Life", life: 1300 },
+  eaom: { name: "Ancient of War", life: 1000 },
+  unpl: { name: "Necropolis", life: 1500 },
+  usep: { name: "Crypt", life: 1300 },
 };
 
 /** Where a unit type's voice may be, in the order to try: none for a type that doesn't speak, or that has no profile. */

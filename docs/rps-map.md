@@ -3,8 +3,9 @@
 [wisp:examples/rps/](../examples/rps/) is a 1999-style role-playing strategy
 (RPS) prototype: each player plays the race he chose in Warcraft's lobby,
 picks one of its four heroes or one of the eight tavern heroes, starts with
-that hero alone, recruits his race's soldiers from a
-quartermaster in a dialogue, and leads them under a
+that hero alone, recruits soldiers in dialogues at four race bases (free at
+his own race's, paid at the others') and mercenaries from a tavern's
+sellsword (a tavern hero's first pair free), and leads them under a
 third-person camera the player turns by dragging with the right mouse button,
 moves with
 WASD relative to that camera, fights with manual swings and a guard that can
@@ -37,9 +38,23 @@ first his race's heroes or the tavern's ("Human heroes", "Tavern heroes",
 click or the keys 1 to 4 choose, 0 goes back. Clicks and keys reach every
 client, so every client spawns the same hero. After 30 seconds
 (`PICK_SECONDS`) a player still choosing gets the first hero of the list he
-is looking at, or his race's first hero. The hero spawns alone on the
-player's start location with 150 gold (`STARTING_GOLD`); his race's soldiers
-are recruited (see Recruiting), whichever hero he picked:
+is looking at, or his race's first hero. The hero spawns alone with 150
+gold (`STARTING_GOLD`), not on the player's start location:
+
+- A race hero spawns at his race's base (see Race bases), 350 in front of
+  its recruiter, toward the map's center (`baseSpawn`): just past talking
+  range, with the recruiter's soldiers free to him there. Players of one race
+  spawn side by side, each in his own lane 160 apart, by player id.
+- A tavern hero belongs to no base: he spawns at the base map's tavern
+  nearest his start location (`nearestTavern`), 200 from it toward the
+  center and off to the side of the sergeant, in a row of four spots 120
+  apart (`tavernSpawn`), where the sellsword gives him his first mercenaries
+  free (see Recruiting). A map without a tavern gets a stand-in spot 600
+  south of the center, with the sergeant and the sellsword.
+
+A race hero's scenes get his race's flag (`raceFlag`), so his race's base
+greets him as kin; a tavern hero's get `TAVERN_HERO_FLAG` instead, so every
+base treats him as a stranger. The races' soldiers and veterans:
 
 | Race | Heroes | Soldiers to recruit (two of each, 10 food) |
 | --- | --- | --- |
@@ -81,12 +96,12 @@ texture in Warcraft; the roster's icon names are untested there yet.
 | `-time 12` (chat) | Set the time of day to that hour, 0 to 23 (noon without one), for every player: Warcraft's night light turns shiny armor dark blue and purple, so this shows the map by day and by night. |
 | `-anim N`, `-combo A B C`, `-impact N`, `-guard N T` (chat) | Play the hero model's animation N, to find its swings; swing with animations A, B and C (`-combo` alone: the attack animations by name); make swings land N ticks in; guard with animation N frozen T ticks in (`-guard` alone: the combat stance). |
 | Tab | Cycle the target through visible enemies within 900 of the hero, nearest first, marked with an overhead effect only its player sees. Without one, the hero targets an enemy on his own. |
-| F | Order the retinue to attack the soft target. |
-| 1 | Vanguard stance: melee form a line 180 ahead of the hero along the camera's yaw, ranged hold 150 behind, flanking 120 to each side per pair. |
-| 2 | Tight Guard stance: the retinue rings the hero 140 out and regroups whenever a unit strays over 200 from the hero. |
-| 3, 4, 5, R | Cast the hero's first, second and third skill and his ultimate, by its targeting; a passive skill says so. |
+| 1, 2, 3, 4 | Cast the hero's first, second and third skill and his ultimate, by its targeting; a passive skill says so. |
+| Z | Squad: hold here. The squad stops where it stands and holds position (`holdposition`): it fights what reaches it but follows and chases nothing, until X or C. |
+| X | Squad: follow. The squad walks back to its formation around the hero at once, out of any fight (a move order, not an attack-move), and follows him from then on, all of it behind him so none gets in his way: melee in a line 160 behind the hero along the camera's yaw, ranged 300 behind, flanking 120 to each side per pair (`followSlot`). |
+| C | Squad: attack the soft target. When it falls the squad follows again. |
 | L | Learn the next skill (see Spells). |
-| Click a spell bar slot | Cast its skill, as 3, 4 and 5 do. |
+| Click a spell bar slot | Cast its skill, as 1 to 4 do. |
 | Click a slot's + | Learn that skill's next rank. |
 | 6, 7, 8, 9, 0, - | Switch the camera: Exploration (950 away, 24 degrees down), Wide action (800, 21, halfway between Exploration and Close action), Close action (650, 18, the start), Shoulder (420, 10), Ground level (280, 4), Tactical (1300, 38). |
 
@@ -115,7 +130,7 @@ each player only their own:
   hero's whole percent (`percentOf`, `barWidth`) over black backings (no
   portrait);
 - a spell bar at the bottom center, one 0.04 slot per skill of the picked
-  hero, in learning order with keys 3, 4, 5 and R (none on a passive). Each
+  hero, in learning order with keys 1, 2, 3 and 4 (none on a passive). Each
   slot shows its icon (Warcraft's disabled icon until learned), its key, its
   rank (`rankText`, "1/3") and the seconds its cooldown has left
   (`BlzGetUnitAbilityCooldownRemaining`). A slot is a BUTTON: a click casts
@@ -274,7 +289,7 @@ for rank n, 6 for Avatar (`canLearn`); `SelectHeroSkill` learns it. On every
 ## How it works
 
 Key events reach every client, so each player's held keys, yaw, combat
-timer, stance and soft target are synchronized state in the `__rpsState`
+timer, squad order and soft target are synchronized state in the `__rpsState`
 global, which a [hot reload](hot-reload.md) keeps. Everything that becomes an
 order or an owner change is integer math in src/rules.ts: angles are tenths
 of a degree, sines come from a whole-degree table scaled by 10,000 and
@@ -287,7 +302,7 @@ the [number rules](../plugins/number-rules.ts) (wisp:plugins/number-rules.ts) re
 | 0.03 s | `rps.camera` | Lands, ends and thaws swings and freezes a raised guard (`fightTick`); every third tick picks a target for a hero without one; counts the 4 s combat timer down; every fifth tick (0.15 s) re-issues WASD moves and holds the hero's ground (`holdGround`); then turns the local camera by the right-mouse drag and applies it. |
 | 0.10 s | `rps.occlusion` | Hides trees between each player's camera eye and hero. |
 | 0.10 s | `rps.hud` | Fills every player's health and mana bars, spell bar, quest journal, interact hint and inventory, and brings his Warcraft quest log up to date. |
-| 0.5 s | `rps.stance` | Orders strayed retinue units back to their stance slots; drops a dead soft target. |
+| 0.5 s | `rps.stance` | Orders a following squad's strayed units back to their slots; ends an attack whose target fell; drops a dead soft target; keeps the race bases busy (`baseLifeTick`, see Race bases). |
 | 1 s | `rps.capture` | Hands each outpost to a player with units in 350 range and no enemies there. |
 | 5 s | `rps.income` | Pays each player 20 gold per outpost they own. |
 
@@ -321,8 +336,7 @@ only for the local player and change only what that player sees.
 
 A trigger on `EVENT_PLAYER_UNIT_DAMAGED` for every player slot resets a
 player's combat timer to 4 s whenever their hero or a retinue unit deals or
-takes damage; while it runs, Vanguard units fight their way back to their
-line.
+takes damage; while it runs, a following squad fights near the hero.
 
 The camera shakes for 0.15 s on impact: when a siege attack
 (`BlzGetEventAttackType() === ATTACK_TYPE_SIEGE`) lands within 500 of the
@@ -374,12 +388,17 @@ client is not yet checked on a native client.
 
 The hero is a Mountain King and the retinue two footmen (melee) and two
 riflemen (ranged); with the hero's 5 food they fill the 15-food cap exactly, set as both the food cap and its
-ceiling. Out of combat, in Vanguard a unit more than 96 from its slot walks
-back to it, and in Tight Guard one more than 200 from the hero does. In
-combat (the 4 s combat timer, which F also starts) a new order would cancel a
-unit's attack mid-swing, as footmen showed in Warcraft, so a unit is left to
-fight unless it strays over 700 from the hero (`LEASH`), when it attack-moves
-back to its slot. Tab enumerates units in 900 range with
+ceiling. The squad has three orders (`squadOrder`): it follows (X, and at
+the start), holds where Z stopped it, or attacks the target C named, until
+the target falls. While following, out of combat a unit more than 96 from
+its slot (`squadSlots`, `followSlot`, all behind the hero) walks back to it. In combat (the
+4 s combat timer, which C also starts) a new order would cancel a unit's
+attack mid-swing, as footmen showed in Warcraft, so a unit is left to fight
+unless it strays over 700 from the hero (`LEASH`), when it walks back to its
+slot rather than fighting its way back: following the hero means falling
+back from a fight. Holding or attacking, the squad gets no regroup orders.
+The earlier stances (Vanguard on 1, Tight Guard on 2, `guardSlot`) gave way
+to the skills on 1 to 4. Vanguard put the melee 180 ahead of the hero, in his way; the follow formation keeps the whole squad behind him. Tab enumerates units in 900 range with
 `GroupEnumUnitsInRange`, keeps living, visible enemies and orders them by
 squared distance, then handle id, so every client picks the same next target
 (`nextTarget`). The target is marked for its player alone, as an action
@@ -402,7 +421,7 @@ outpost beside each gold mine that isn't a player's home mine (within 1500 of
 their start location, `isHomeMine`): 320 from the mine toward the map's
 center (`outpostBeside`), guarded by the map's own creep camps. A map with
 neither gets three outposts around the center, each guarded by three gnolls.
-Each player's hero and squad start on their start location. Each capture check counts the owners of living
+Each player's hero and squad start at his race's base or a tavern (see Picking a hero). Each capture check counts the owners of living
 units in 350 range; `captureOwner` gives the outpost to a player who may
 capture (one of the map's players) when none of that player's enemies is
 present. The owner keeps a contested or empty outpost, and among several
@@ -468,8 +487,8 @@ supplying what they ask of it:
   interface around a scene. Its members are plain functions with no `self`
   in Lua, so the map hands in arrow functions.
 
-src/main.ts places this map's NPCs (taverns, wanderers, quartermasters,
-quest sites), implements the host, and calls the engine from its timers,
+src/main.ts places this map's NPCs (taverns with their sergeant and
+sellsword, wanderers, quest sites, race bases), implements the host, and calls the engine from its timers,
 keys and clicks. The scene modules still read the map's pure rules and data
 (src/dialogue.ts, src/units.ts, src/letterbox.ts, src/rules.ts,
 src/combat.ts, src/constants.ts); a map that runs them today copies those
@@ -730,6 +749,8 @@ NPC who has turned can't be talked to again (`talkable`).
   and his bruisers stand dazed for 4 seconds as the fight starts; or draw
   weapons and they all come at once. The hoard pays 120 once the fight is won.
 
+**Shadowmeld**: NPCs and the units standing with them (a quest site's company, a base's guards) never move, so a night elf among them (Ilyra, the Night Elf base's recruiter, quest giver and guards) would Shadowmeld at night and turn invisible. Once every NPC is placed, `start` takes Shadowmeld (`SHADOWMELD_ABILITIES`: `Ashm` and `Sshm`) from all of them, so they stay visible day and night. The players' own night elf soldiers keep it.
+
 **Around the scenes**: every 0.5 s, an NPC with a bark turns to a hero walking
 past within 600 (but not yet within talking range) and calls out once, a
 voiced line over his head shown only to that player, until the hero has gone
@@ -845,27 +866,116 @@ its icons and item use are untested in Warcraft yet.
 
 ## Recruiting
 
-The party starts empty. A quartermaster, a soldier of the player's race,
-stands 400 from each player's start location toward the map's center; E beside
-him (or `-scene` nearby) plays `RECRUIT_SCENE`, a personal scene like
-any other. He offers the race's soldiers two at a time: two melee for 60 gold
-or two ranged for 80 (each greyed out without the gold), or "Not now". After
-a hire he asks "Anyone else?" with the same choices, until the hero says not
-now; coming back, he opens with "Back for more?". A `recruit` effect recruits
-as its line plays (`recruitOutcome`): the hero pays and two of the race's
-soldiers of that role appear behind him and join his squad ("Two Footmen join
-you."), unless he can't afford them or already leads that role's soldiers.
-The starting gold buys both pairs; outposts pay for later hires. Scene text
-fills in placeholders per player (`fillLine`): {hero} for the hero's name,
-{melee} and {ranged} for what his race's soldiers are called (Footmen,
-Grunts, Huntresses, Ghouls; Riflemen, Headhunters, Archers, Crypt Fiends).
+The party starts empty. A race hero spawns at his race's base, whose
+recruiter gives him soldiers free (see Race bases). A tavern hero spawns at
+a tavern, where the sellsword stands beside the sergeant (src/tavern.ts,
+`SELLSWORD_SCENE`, 300 toward the center and 250 to the sergeant's left).
+E beside either (or `-scene` nearby) plays its scene. A `recruit` effect
+recruits as its line plays (`recruitOutcome`): the hero pays and two
+soldiers appear behind him and join his squad ("Two Footmen join you."),
+unless he can't afford them or already leads soldiers of that type
+(`Member.code`). Whose soldiers they are, the effect says: his own race's
+of a role, a base's race's (`race`), its veterans (`veteran`), or a named
+unit type (`soldier`, a sellsword's mercenaries). Outposts pay for later
+hires. Scene text fills in placeholders per player (`fillLine`): {hero} for
+the hero's name, {melee} and {ranged} for what his race's soldiers are
+called (Footmen, Grunts, Huntresses, Ghouls; Riflemen, Headhunters,
+Archers, Crypt Fiends).
+
+**The sellsword**, Krag, an ogre, hires out mercenaries two at a time
+(`SELLSWORDS`): Ogres (melee, 120 gold), Forest Trolls (ranged, 100) and
+Forest Troll Shadow Priests (ranged, 110). To a tavern hero who hasn't had
+it yet he opens on his free contract: any one pair free, which sets
+`FREE_SELLSWORD_FLAG`. Otherwise, and after it, he sells them, each choice
+greyed out without the gold, and asks "Anyone else?" until the hero says not
+now. Race heroes can hire from him too, always paying. The earlier
+quartermaster, who sold each player his own race's soldiers by his start
+location, is gone: race heroes get them free at their base, and tavern
+heroes have the sellsword.
+
+## Race bases
+
+Four bases stand 2000 from the playable area's center, in the gaps between
+the quest sites (src/bases.ts, `BASES`): Human at 45 degrees, Orc at 135,
+Night Elf at 225 and Undead at 315. Each has its race's hall and barracks
+behind its recruiter (Town Hall and Barracks; Great Hall and Barracks; Tree
+of Life and Ancient of War; Necropolis and Crypt), two melee and two ranged
+guards of its race in front of him, all neutral and unhurtable
+(`placeBases`), the recruiter, a soldier of its race (Marshal Aldren,
+Blood Captain Gorth, Sentinel Ilara, Deathlord Varkus), and a quest giver at
+his side (Lieutenant Mira, Scout Rokhan, Warden Thalyss, Acolyte Mordis).
+Each carries the "!" until the player has talked to him and calls out to
+heroes walking past.
+
+E beside a recruiter plays his base's scene (`baseScene`, made from the
+race's data so it names the race's own soldiers). As a player's hero
+spawns, his scenes get his lobby race's flag (`raceFlag`, `race:Orc`). A
+player of the base's race opens on "kin": two of its melee or two of its
+ranged soldiers free. Anyone else opens on "stranger": the same soldiers for
+90 and 120 gold (`BASE_MELEE_COST`, `BASE_RANGED_COST`; each greyed out
+without the gold).
+After a hire the recruiter asks again until the hero says not now. The
+soldiers are the base's race's, whoever buys them (`recruit` with `race`),
+and each party member keeps his own unit type (`Member.code`), so a soldier
+of another race speaks with his own voice in a scene. The recruiting rule
+still holds: no new pair of a type while the hero leads soldiers of
+that type, so a free base doesn't fill the map with soldiers, but a veteran
+pair can join beside a basic one of the same role. Units the map creates
+ignore Warcraft's food cap, so veterans can take a party past it.
+
+**Base life** (`BaseLife`, `placeBases`, `baseLifeTick`): besides its hall
+and barracks each base has two houses (Farms, Orc Burrows, Moon Wells,
+Ziggurats), and its people go about their day:
+
+- three workers of its race (Peasants, Peons, Wisps, Acolytes) walk from the
+  hall to the houses and the barracks and back, on Warcraft's patrol order;
+- two melee guards walk a beat across the base's front, 1200 long, the same
+  way;
+- a sparring pair by the barracks face each other and swing in turn, a
+  second apart (`sparrerOnBeat`: the attack animation, then "stand ready");
+- every 8 s someone at the base (a guard, a worker or a sparrer, each in
+  turn) calls out a line of its race's chatter over his head ("Keep those
+  blades sharp!", "Zug zug.", "Elune watches over us.", "The Scourge never
+  sleeps.": `chatterOn`), the four bases a quarter of the round apart. Every
+  client makes the text and reads every hero alike; each shows it only to
+  his own player, if his hero is within 1600 (`CHATTER_RANGE`).
+
+They are all neutral, unhurtable, stand with the recruiter (his company) and
+lose Shadowmeld like every NPC. Their walks, the sparring animations and the
+houses' fit on the ground are untested in Warcraft yet.
+
+**Base quests**: each base's quest giver plays its quest scene
+(`baseQuestScene`). He asks the hero to clear a camp at the base's own
+objective, out past the base, and taking it (`questFlag`, `baseQuest:Orc`)
+raises the camp there as hostile creeps standing guard, marked on the
+player's minimap (see Objectives):
+
+| Base | Quest | Camp | Objective | Veterans |
+| --- | --- | --- | --- | --- |
+| Human | Bandits on the King's Road | 3 Bandits, an Enforcer | the bandit camp, 3200 out at 60 degrees | Knights, Sorceresses |
+| Orc | Wolves at the Pens | 3 Timber Wolves, a Giant Wolf | the wolf den, 3400 out at 115 | Tauren, Troll Berserkers |
+| Night Elf | Murlocs at the Moonwell | 3 Murloc Tiderunners, a Huntsman | the moonwell shore, 3200 out at 245 | Mountain Giants, Dryads |
+| Undead | Kobold Tunnels | 3 Kobolds, a Taskmaster | the kobold tunnels, 3200 out at 335 | Abominations, Necromancers |
+
+Once all of the camp has fallen, the bounty pays 50 gold (`BASE_QUEST_GOLD`)
+and sets `veteransFlag` (`veterans:Orc`). The quest list and Warcraft's
+quest log show the quest while it is under way (src/journal.ts makes an
+entry for each base). From then on the base's recruiter shows a fourth
+choice, "Your veterans." (hidden before, so the numbers stay 1 to 3): the
+race's veterans (`Race.veterans` in src/roster.ts), two melee or two ranged,
+free to kin and 150 or 180 gold to anyone else (`VETERAN_MELEE_COST`,
+`VETERAN_RANGED_COST`). Coming back, the quest giver hurries the hero on, or
+thanks him. Any player can do any base's quest, and it unlocks that base's
+veterans for him alone. The bases' placement, buildings on uneven or
+unbuildable ground, the Undead base's blight, the camps' creep rawcodes and
+the veterans' voices are untested in Warcraft yet.
 
 ## Tests
 
 | File | What it checks |
 | --- | --- |
 | src/rules.tests.ts, test/rules.test.ts, test/lua.ts | The pure rules in Bun, then compiled with tsconfig.tests.json and run in 32-bit Lua (a farm test): the sine table, easing and yaw wrap, the combat timer, terrain lift, eye position, WASD directions, occlusion, Vanguard and Tight Guard slots, Tab cycling, capture, income, the follow yaw and skill learning; src/combat.tests.ts, the integer arctangent, the swing's cone and timing, the combo, step-in, the guard, shots, the automatic target and its ring; src/roster.tests.ts, the roster's shape and its default pick; src/dialogue.tests.ts, voice files and their variants, gestures, line timing by text and voice, scene checks, the tavern scene's branches, the camera shots, the shot director and its glides, the fades, conditions, openings, choice states, news and listeners, the talking spot, filled-in lines, recruiting, and the scout's, mercenary's and healer's scenes and places; src/units.tests.ts, that every unit type the map creates has a profile, the profiles' shape, voice guesses, and talk and gesture overrides; src/quests.tests.ts, the quests' scenes and sites, hero conditions, and each quest's branches, turns and bounties; src/killcam.tests.ts, which death ends a fight and the kill cam's glide and close view; src/layout.tests.ts, the interface's boxes. |
-| test/journey.ts, test/headless-lua.ts, test/headless.test.ts | A farm test: the compiled bundle in two simulated 32-bit Lua clients picks the Human Mountain King by keys for player 1 and the Archmage by clicking the picker for player 2, who fires a shot, presses L, clicks Storm Bolt on the spell bar, holds W and D, presses Tab, F, 1 and 2, takes a hot reload, presses 3, 4 and 5, holds A, switches cameras, swings with a click and Space, guards with Q, sends `-anim`, `-combo`, `-impact` and `-guard`, buffers a swing, walks with the guard up, recruits from each player's quartermaster, player 1 hiring Footmen by key and player 2 Riflemen by a click (and failing to hire them twice), skipping lines with Space, player 1 goes back to the quartermaster and leaves with Esc, and makes the same native calls in both clients for 1000 frames. |
+| test/journey.ts, test/headless-lua.ts, test/headless.test.ts | A farm test: the compiled bundle in two simulated 32-bit Lua clients picks the Human Mountain King by keys for player 1 and the Archmage by clicking the picker for player 2 (both Human in the lobby, so both spawn at the Human base), who attacks with Space, presses L, clicks Storm Bolt on the spell bar, holds W and D, presses Tab, C, Z and X, takes a hot reload, presses 1, 2 and 3, holds A, switches cameras, swings with a click and Space, guards with Q, sends `-anim`, `-combo`, `-impact` and `-guard`, buffers a swing, walks with the guard up, recruits from the Human base's recruiter, free to both as kin, player 1 taking Footmen by key and player 2 Riflemen by a click (and failing to take them twice), skipping lines with Space, player 1 goes back to the recruiter and leaves with Esc, and makes the same native calls in both clients for 1000 frames. |
 
 The map calls Warcraft's natives directly, which a map on Bun does not get
 ([headless](headless.md)), so its journey runs only in Lua. Headless units

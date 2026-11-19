@@ -45,6 +45,8 @@ export interface Race {
   readonly heroes: readonly [Hero, Hero, Hero, Hero];
   /** The soldiers a hero can recruit: two melee and two ranged, 10 food, 15 with the hero. */
   readonly army: readonly Soldier[];
+  /** The race's veterans, two melee and two ranged, which its base offers once a player has done its quest (./bases.ts). */
+  readonly veterans: readonly Soldier[];
 }
 
 const skill = (name: string, code: string, order: string, targeting: Targeting, icon: string): Skill => ({ name, code, order, targeting, icon });
@@ -80,6 +82,7 @@ export const RACES: readonly Race[] = [
       ] },
     ],
     army: [...pair("hfoo", "melee", "Footmen"), ...pair("hrif", "ranged", "Riflemen")],
+    veterans: [...pair("hkni", "melee", "Knights"), ...pair("hsor", "ranged", "Sorceresses")],
   },
   {
     name: "Orc",
@@ -110,6 +113,7 @@ export const RACES: readonly Race[] = [
       ] },
     ],
     army: [...pair("ogru", "melee", "Grunts"), ...pair("ohun", "ranged", "Headhunters")],
+    veterans: [...pair("otau", "melee", "Tauren"), ...pair("otbk", "ranged", "Troll Berserkers")],
   },
   {
     name: "Night Elf",
@@ -140,6 +144,7 @@ export const RACES: readonly Race[] = [
       ] },
     ],
     army: [...pair("esen", "melee", "Huntresses"), ...pair("earc", "ranged", "Archers")],
+    veterans: [...pair("emtg", "melee", "Mountain Giants"), ...pair("edry", "ranged", "Dryads")],
   },
   {
     name: "Undead",
@@ -170,6 +175,7 @@ export const RACES: readonly Race[] = [
       ] },
     ],
     army: [...pair("ugho", "melee", "Ghouls"), ...pair("ucry", "ranged", "Crypt Fiends")],
+    veterans: [...pair("uabo", "melee", "Abominations"), ...pair("unec", "ranged", "Necromancers")],
   },
 ];
 

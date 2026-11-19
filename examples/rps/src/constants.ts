@@ -23,7 +23,7 @@ export const MOVE_EVERY_TICKS = 5;
 export const DEAD_LIFE = f32(0.405);
 
 /** The spell bar's keys, by skill: 3, 4 and 5 for the three basic skills, R for the ultimate. */
-export const SKILL_KEYS = ["3", "4", "5", "R"];
+export const SKILL_KEYS = ["1", "2", "3", "4"];
 /** A low 0.15 s camera sway on impact: noise magnitude and velocity for both the eye and the target. */
 export const SHAKE_MAGNITUDE = 4.0;
 export const SHAKE_VELOCITY = 100.0;
@@ -43,6 +43,8 @@ export const FLOAT_TEXT_SIZE = f32(0.024);
 export const FLOAT_TEXT_RISE = f32(0.03);
 /** The hero's built-in attack: removed, so he swings only when the player does. */
 export const ATTACK_ABILITY = fourCC("Aatk");
+/** Night elf Shadowmeld (the units' and the heroes' versions): idle at night, a unit with it turns invisible, so the map takes it from NPCs. */
+export const SHADOWMELD_ABILITIES = [fourCC("Ashm"), fourCC("Sshm")];
 export const OUTPOST = fourCC("ncop");
 /** Warcraft's order ids for move and the right-click "smart" order. */
 export const ORDER_MOVE = 851986;
@@ -92,11 +94,11 @@ export const BARK_TEXT_SIZE = FLOAT_TEXT_SIZE;
  * ConvertOsKeyType of the virtual-key code. A key event reports the same code
  * as GetHandleId of its key.
  */
-export const KEY = { escape: 0x1b, minus: 0xbd, tab: 0x09, space: 0x20, zero: 0x30, one: 0x31, two: 0x32, three: 0x33, four: 0x34, five: 0x35, six: 0x36, seven: 0x37, eight: 0x38, nine: 0x39, a: 0x41, d: 0x44, e: 0x45, f: 0x46, i: 0x49, l: 0x4c, q: 0x51, r: 0x52, s: 0x53, w: 0x57 } as const;
+export const KEY = { escape: 0x1b, minus: 0xbd, tab: 0x09, space: 0x20, zero: 0x30, one: 0x31, two: 0x32, three: 0x33, four: 0x34, five: 0x35, six: 0x36, seven: 0x37, eight: 0x38, nine: 0x39, a: 0x41, c: 0x43, d: 0x44, e: 0x45, i: 0x49, l: 0x4c, q: 0x51, s: 0x53, w: 0x57, x: 0x58, z: 0x5a } as const;
 /** Registration order: an array, since Lua walks a table's keys in no fixed order. */
-export const KEY_CODES = [KEY.escape, KEY.minus, KEY.space, KEY.q, KEY.l, KEY.w, KEY.a, KEY.s, KEY.d, KEY.tab, KEY.f, KEY.e, KEY.i, KEY.one, KEY.two, KEY.three, KEY.four, KEY.five, KEY.r, KEY.six, KEY.seven, KEY.eight, KEY.nine, KEY.zero];
+export const KEY_CODES = [KEY.escape, KEY.minus, KEY.space, KEY.q, KEY.l, KEY.w, KEY.a, KEY.s, KEY.d, KEY.tab, KEY.z, KEY.x, KEY.c, KEY.e, KEY.i, KEY.one, KEY.two, KEY.three, KEY.four, KEY.five, KEY.six, KEY.seven, KEY.eight, KEY.nine, KEY.zero];
 /** The skill keys, by skill. */
-export const SKILL_KEY_CODES: readonly number[] = [KEY.three, KEY.four, KEY.five, KEY.r];
+export const SKILL_KEY_CODES: readonly number[] = [KEY.one, KEY.two, KEY.three, KEY.four];
 /** The picker's choice keys. */
 export const PICK_KEYS: readonly number[] = [KEY.one, KEY.two, KEY.three, KEY.four];
 /** The camera keys, in CAMERA_PRESETS order. */

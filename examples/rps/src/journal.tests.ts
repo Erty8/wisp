@@ -2,6 +2,7 @@ import { assertEquals, test } from "wisp/src/runtime/testing";
 import { type Effect, type Scene, MERCENARY_SCENE, SCOUT_SCENE, TAVERN_SCENE } from "./dialogue";
 import { JOURNAL, activeQuests, journalText, logChange, logMessage, questLog } from "./journal";
 import { QUEST_SCENES } from "./quests";
+import { BASES } from "./bases";
 
 const titles = (flags: readonly string[]) => activeQuests(new Set(flags)).map((quest) => quest.title).join(",");
 
@@ -21,7 +22,7 @@ function flagsSet(scene: Scene): Set<string> {
 
 test("[property] rps journal: every quest starts on a flag a scene sets and ends on another one", () => {
   const settable = new Set<string>();
-  for (const scene of [...QUEST_SCENES, TAVERN_SCENE, SCOUT_SCENE, MERCENARY_SCENE]) for (const flag of flagsSet(scene)) settable.add(flag);
+  for (const scene of [...QUEST_SCENES, TAVERN_SCENE, SCOUT_SCENE, MERCENARY_SCENE, ...BASES.map((base) => base.questScene)]) for (const flag of flagsSet(scene)) settable.add(flag);
   for (const entry of JOURNAL) {
     const starts = entry.when.filter((condition) => "flag" in condition), ends = entry.when.filter((condition) => "notFlag" in condition);
     assertEquals(starts.length > 0 && ends.length > 0, true, `${entry.title}: a start and an end`);

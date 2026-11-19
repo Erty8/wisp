@@ -8,7 +8,7 @@ import { farmTest } from "wisp/scripts/wisp/farmTest";
 
 const rps = join(import.meta.dir, "..");
 
-farmTest("both players recruit from their quartermaster, down different choices, pick their race's heroes and a hero by keys and clicks, learn and cast from the spell bar, swing and guard with the mouse and keys, walk, target, attack, switch stances, try their spells, walk with A and switch cameras, and take a hot reload, with the same native calls in both clients", () => {
+farmTest("both players spawn at their race's base and recruit from its recruiter, down different choices, pick their race's heroes and a hero by keys and clicks, learn and cast from the spell bar, swing and guard with the mouse and keys, walk, target, order the squad to attack, hold and follow, try their spells with 1 to 4, walk with A and switch cameras, and take a hot reload, with the same native calls in both clients", () => {
   expect(report(mapCompiler(join(rps, "tsconfig.map.json"))())).toBe("");
   expect(report(mapCompiler(join(rps, "tsconfig.headless.json"))())).toBe("");
   const run = Bun.spawnSync([
@@ -26,9 +26,10 @@ farmTest("both players recruit from their quartermaster, down different choices,
   expect(lines.filter((line) => line.startsWith("p0: says WASD moves the Mountain King"))).toHaveLength(1);
   expect(lines.filter((line) => line.startsWith("p1: says WASD moves the Archmage"))).toHaveLength(1);
   expect(lines).toContain("p0: says No visible enemy within 900.");
-  expect(lines).toContain("p0: says Stance: Tight Guard. The squad stays by the hero.");
+  expect(lines).toContain("p0: says Squad: holding here.");
   expect(lines).toContain("p1: says No target: press Tab first.");
-  expect(lines).toContain("p1: says Stance: Vanguard. Melee in front, ranged behind.");
+  expect(lines).toContain("p1: says Squad: holding here.");
+  expect(lines).toContain("p1: says Squad: following you, falling back from any fight.");
   expect(lines.some((line) => line.startsWith("p1: says No visible enemy"))).toBe(false);
   expect(lines).toContain("p0: says No target: press Tab first.");
   expect(lines).toContain("p0: says Thunder Clap can't be cast now: not learned, recharging or out of mana.");
@@ -37,7 +38,7 @@ farmTest("both players recruit from their quartermaster, down different choices,
   expect(lines).toContain("p0: says Animation 3.");
   expect(lines).toContain("p0: says Swings land 8 ticks in (240 ms).");
   expect(lines).toContain("p1: says Guard pose: animation 5, frozen 6 ticks in.");
-  // The quartermaster: player 1 hires Footmen; player 2 hires Riflemen, then can't hire them twice.
+  // The Human base's recruiter: player 1 takes Footmen; player 2 takes Riflemen, then can't take them twice.
   expect(lines).toContain("p0: says Two Footmen join you.");
   expect(lines).toContain("p1: says Two Riflemen join you.");
   expect(lines).toContain("p1: says You already lead Riflemen.");

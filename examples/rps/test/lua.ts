@@ -9,6 +9,8 @@ import "../src/killcam.tests";
 import "../src/quests.tests";
 import "../src/journal.tests";
 import "../src/interact.tests";
+import "../src/bases.tests";
+import "../src/tavern.tests";
 import "../src/units.tests";
 
 if (runTests(print) > 0) os.exit(1);
