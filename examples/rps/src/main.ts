@@ -5,7 +5,7 @@
 // squad stances and capturable income outposts. Each player first picks a
 // race and a hero (./picker.ts, ./roster.ts); the hero spawns alone on the
 // player's start location and recruits his race's soldiers from the
-// quartermaster beside it, in a dialogue. Walking up to an NPC plays a personal
+// quartermaster beside it, in a dialogue. E beside an NPC plays a personal
 // dialogue scene (./dialogue.ts, ./letterbox.ts) for that player alone. Nothing is ever selected and Warcraft's interface is all below
 // the screen; the map draws its own (./hud.ts), so no Warcraft hotkey fires.
 // The default melee initialization never runs (wisp:docs/sample-map.md, "The
@@ -22,16 +22,17 @@ import { installHotReload, startHotReload } from "wisp/src/map/hotReload";
 import { f32 } from "wisp/src/sim/f32";
 import { floorDiv, floorMod } from "wisp/src/sim/intMath";
 import { type Box, MINIMAP, OFF_SCREEN_BOX } from "./layout";
-import { type Hud, type SlotView, createHud, hudAction, showHud } from "./hud";
-import { activeQuests, journalText } from "./journal";
+import { type Hud, type ItemView, type SlotView, createHud, hudAction, showHud } from "./hud";
+import { type Reachable, interactHint, interaction } from "./interact";
+import { activeQuests, journalText, questLog } from "./journal";
+import { syncQuestLog } from "./questLog";
 import { type Picker, createPicker, pickerAction, showPicker } from "./picker";
-import { type Letterbox, choiceOf, createLetterbox, setFade, showChoices, showSubtitle } from "./letterbox";
-import {
-  type Actor, type Bounty, type DialogueNode, type Effect, type Framing, type LastShot, type Mood, type Scene,
-  BARK_RANGE, BARK_RESET_RANGE, FACE_HEIGHT, FADE_TICKS, RECRUIT_SCENE, SCENE_PAUSE_RANGE, STARTING_GOLD, TALK_ANIMATION, TALK_RANGE, TALK_RESET_RANGE, TAVERN_SCENE, WANDERERS, choiceStates, countTakes, directShot, objectiveSpot, fadeAlpha, fillLine, framing, gestureOf, hasNews, lineTicks, listenerOf, meets, openingOf, recordingFile, recruitOutcome, sceneFraming, seenFlag, shotFace, talkSpot, talkTicks, voiceFile, voiceTicks,
-} from "./dialogue";
+import { choiceOf, createLetterbox } from "./letterbox";
+import { RECRUIT_SCENE, STARTING_GOLD, TAVERN_SCENE, WANDERERS, recruitOutcome } from "./dialogue";
 import { QUEST_SITES } from "./quests";
-import { faceHeight, gestureFor, talkAnimation, voiceCandidates } from "./units";
+import { type Npc, type SceneSeat, type SceneState, flagsOf, goldOf, installScenes } from "./sceneHost";
+import { chooseLine, endScene, fadeTick, playNearest, sceneTick, skipLine, startScene, talkCheck, talkTarget, voiceSynced } from "./scenes";
+import { questTick } from "./questRuntime";
 import { KILL_CAM_RANGE, KILL_CAM_TICKS, SLOW_MOTION_RADIUS, SLOW_MOTION_SCALE, endsFight, killCamShot } from "./killcam";
 import { type Hero, type Race, type Skill, DEFAULT_PICK, PICK_SECONDS, RACES, disabledIcon, heroOf, icon, raceOf, rawcode } from "./roster";
 import {
@@ -46,7 +47,7 @@ import {
   canLearn, dragYaw, nextSkill, occludes, offset, percentOf, rankText, vanguardSlot,
 } from "./rules";
 import {
-  SEATS, CAMERA_PERIOD, OCCLUSION_PERIOD, STANCE_PERIOD, ARRANGE_DELAY, HUD_PERIOD, CAPTURE_PERIOD, INCOME_PERIOD, MOVE_EVERY_TICKS, DEAD_LIFE, SKILL_KEYS, SHAKE_MAGNITUDE, SHAKE_VELOCITY, SWING_SPEED, COUNTER_SPEED, SLASH_MODEL, PARRY_MODEL, BLOCK_MODEL, GUARD_MODEL, GUARD_WALK_SPEED, RECOIL_SPEED, FLOAT_TEXT_SIZE, FLOAT_TEXT_RISE, ATTACK_ABILITY, OUTPOST, ORDER_MOVE, ORDER_SMART, YAW_PREFIX, TAVERN, TURN_SECONDS, GOLD_MINE, CREEPS, ui, RING_TEXTURE, IMAGE_TYPE_SELECTION, TARGET_TINT, NEWS_MODEL, QUEST_ICON_SKIN_KEY, QUEST_ICON_FILE, VOICE_PREFIX, FIGHT_DISTANCE, SITE_RADIUS, CAMP_DISTANCE, CAMP_RADIUS, OBJECTIVE_RADIUS, OBJECTIVE_ICON_SKIN_KEY, OBJECTIVE_ICON_FILE, OBJECTIVE_PING_SECONDS, BARK_TEXT_SIZE, KEY, KEY_CODES, SKILL_KEY_CODES, PICK_KEYS, CAMERA_KEYS,
+  SEATS, CAMERA_PERIOD, OCCLUSION_PERIOD, STANCE_PERIOD, PICKUP_RANGE, INVENTORY_SLOTS, ARRANGE_DELAY, HUD_PERIOD, CAPTURE_PERIOD, INCOME_PERIOD, MOVE_EVERY_TICKS, DEAD_LIFE, SKILL_KEYS, SHAKE_MAGNITUDE, SHAKE_VELOCITY, SWING_SPEED, COUNTER_SPEED, SLASH_MODEL, PARRY_MODEL, BLOCK_MODEL, GUARD_MODEL, GUARD_WALK_SPEED, RECOIL_SPEED, FLOAT_TEXT_SIZE, FLOAT_TEXT_RISE, ATTACK_ABILITY, OUTPOST, ORDER_MOVE, ORDER_SMART, YAW_PREFIX, TAVERN, GOLD_MINE, CREEPS, ui, RING_TEXTURE, IMAGE_TYPE_SELECTION, TARGET_TINT, VOICE_PREFIX, KEY, KEY_CODES, SKILL_KEY_CODES, PICK_KEYS, CAMERA_KEYS,
 } from "./constants";
 
 
@@ -117,10 +118,7 @@ interface Keys {
   d: boolean;
 }
 
-interface Seat {
-  readonly id: number;
-  readonly player: player;
-  readonly hero: unit;
+interface Seat extends SceneSeat {
   /** The race and hero the player picked. */
   readonly race: Race;
   readonly heroInfo: Hero;
@@ -142,45 +140,27 @@ interface Seat {
   camera: number;
   /** The map's interface for this player: health and mana, spell bar. */
   hud: Hud | undefined;
-  /** The player's scene letterbox, and the scene playing for them, if any. */
-  letterbox: Letterbox | undefined;
-  scene: SceneRun | undefined;
-  /** The NPC the hero last talked to: it starts its scene again only once he has walked away. */
-  talkedTo: unit | undefined;
+  /** Whether the player has his inventory open (its button, or I). */
+  inventoryOpen?: boolean | undefined;
   /** Whether the hero is rooted (`rootTick`). */
   rooted?: boolean | undefined;
-  /** What the player's scenes remember he did. */
-  flags?: Set<string> | undefined;
-  /** NPCs that have called out to the hero, until he has gone BARK_RESET_RANGE away. */
-  barked?: unit[] | undefined;
-  /** The "!" over each NPC with something new for this player, and his quest icon on the minimap. */
-  news?: Map<unit, { readonly mark: effect; readonly icon: minimapicon }> | undefined;
-  /** The player's screen fading to or from black: the tick it began. */
-  fade?: { readonly start: number; readonly toBlack: boolean } | undefined;
   /** The kill cam on the last enemy of a fight: where it fell and the tick the shot began, while it plays. */
   killCam?: { readonly fallen: Point; readonly start: number } | undefined;
 }
 
-/** Match state lives in a global, so a reloaded bundle continues it. */
-interface RpsState {
+/** Match state lives in a global, so a reloaded bundle continues it; the scene engine keeps its own in it (`SceneState`). */
+interface RpsState extends SceneState {
   ticks: number;
   readonly seats: Seat[];
   readonly outposts: unit[];
-  /** One group, rect and location reused by every query, so nothing leaks. */
-  readonly group: group;
+  /** One rect reused by every query, so nothing leaks (the group and location are the scene engine's, shared). */
   readonly rect: rect;
-  readonly location: location;
-  readonly everything: filterfunc;
   /** Fires on every spell bar click. */
   readonly clicks: trigger;
   /** Animation indices -combo set for the three swings, in place of the attack animations by name. */
   comboAnimations?: readonly number[] | undefined;
   /** Every player's race and hero pick, until they have picked. */
   readonly picks: Pick[];
-  /** The NPCs heroes can talk to. */
-  readonly npcs: Npc[];
-  /** The playable area's center. */
-  readonly center: Point;
   /**
    * This client's own right-mouse drag: the pointer's last X, the yaw dragged
    * to and the last yaw sent. Local to each client, it only ever turns the
@@ -189,77 +169,11 @@ interface RpsState {
   readonly drag: { lastX: number | undefined; yaw: number | undefined; sent: number | undefined };
   /** Parts of the map `-off` has switched off. */
   off?: Set<string> | undefined;
-  /** Each unit type's voice prefix as found (`voicePrefixOf`), "" for none. */
-  voices?: Map<string, string> | undefined;
-  /** How many recordings of a mood's kind each unit type's set has, by "code:mood", as measured (`takesOf`). */
-  takes?: Map<string, number> | undefined;
-  /** Units a scene raised or turned, by "seat:tag"; the bounties waiting on them; and turned units still dazed, until a tick. */
-  tagged?: Map<string, unit[]> | undefined;
-  bounties?: { readonly seat: number; readonly key: string; readonly bounty: Bounty }[] | undefined;
-  /** Each quest objective marked on a player's minimap, by "seat:tag", until every unit under the tag has fallen. */
-  objectives?: { readonly key: string; readonly icon: minimapicon }[] | undefined;
-  held?: { readonly unit: unit; readonly until: number; readonly seat: number }[] | undefined;
-  /** NPCs and companies fighting on a hero's side, until the fight under their key is won, and the post they go back to. */
-  allies?: { readonly unit: unit; readonly key: string; readonly post: Point }[] | undefined;
   /** While a parry's counter-slash deals its damage, so it isn't parried in turn. */
   countering?: boolean | undefined;
   /** Units in a kill cam's slow motion, each with the speed it would play at without it, and the tick it ends. */
   slowed?: Map<unit, number> | undefined;
   slowUntil?: number | undefined;
-}
-
-/** A personal scene playing: the scene, its NPC, the line up, the tick it ends, its voice and the units it paused. */
-interface SceneRun {
-  readonly scene: Scene;
-  readonly npc: unit;
-  node: DialogueNode;
-  endTick: number;
-  voice: sound | undefined;
-  readonly paused: unit[];
-  /** The NPC's name in the subtitles and the unit type whose voice he speaks with. */
-  readonly npcName: string;
-  readonly npcCode: string;
-  /** The soldier of the hero's squad on stage, if the scene has lines for one, his unit type and name. */
-  readonly squad: unit | undefined;
-  readonly squadCode: string | undefined;
-  readonly squadName: string;
-  /** The tick the scene began, and the tick the line began and how long it runs. */
-  readonly startTick: number;
-  lineStart: number;
-  lineLength: number;
-  /** Lines played so far, which picks each line's recording. */
-  lines: number;
-  /** The camera: the framing it glides from (undefined on a cut), the line's own, the last line's speaker and shot, and where the speaker stands. */
-  from: Framing | undefined;
-  to: Framing | undefined;
-  last: LastShot | undefined;
-  speakerAt: Point;
-  /** The height the line's shot looks at: the speaker's face (`faceHeight`), or between both in a two-shot. */
-  face?: number | undefined;
-  /** The unit speaking the line, and the tick he stops talking (his voice's end, once measured). */
-  speakerUnit?: unit | undefined;
-  talkUntil?: number | undefined;
-  /** The line's filled-in text and speaker's name. */
-  text: string;
-  speakerName: string;
-  /** The tick the scene began fading out, once it is ending. */
-  closing: number | undefined;
-  /** Enemies the scene raised, who attack once it ends. */
-  readonly fights: unit[];
-  /** Units that turn on the hero as the scene ends, under their tag, dazed `hold` seconds first. */
-  readonly turns: { readonly unit: unit; readonly tag: string; readonly hold: number }[];
-  /** Units that fight on the hero's side as the scene ends, until the fight under their tag is won. */
-  readonly allies: { readonly unit: unit; readonly tag: string }[];
-}
-
-/** An NPC a hero can talk to, the scene he plays, his name and his unit type. */
-interface Npc {
-  readonly unit: unit;
-  readonly scene: Scene;
-  readonly name: string;
-  readonly code: string;
-  /** The units standing with a quest NPC, who may turn on the hero with him (`hostile`). */
-  readonly extras: readonly unit[];
 }
 
 /** A player choosing: the race chosen so far, if any, and their picker. */
@@ -296,6 +210,13 @@ function unitsInRange(x: number, y: number, radius: number): unit[] {
   const size = BlzGroupGetSize(rps.group);
   for (let index = 0; index < size; index++) found.push(BlzGroupUnitAt(rps.group, index));
   return found;
+}
+
+/** The map's own seat for a player the scene engine names. */
+function seatFor(scene: SceneSeat): Seat {
+  const seat = state().seats.find((candidate) => candidate.id === scene.id);
+  if (seat === undefined) throw new Error(`no seat ${scene.id}`);
+  return seat;
 }
 
 function seatOf(target: player): Seat | undefined {
@@ -1000,6 +921,80 @@ function setStance(seat: Seat, stance: Stance): void {
   say(seat, stance === "vanguard" ? "Stance: Vanguard. Melee in front, ranged behind." : "Stance: Tight Guard. The squad stays by the hero.");
 }
 
+/**
+ * The nearest item lying on the ground within PICKUP_RANGE of the hero, and
+ * its squared distance. Every client enumerates the same items in the same
+ * order, so every client finds the same one.
+ */
+function nearestLoot(seat: Seat): { readonly item: item; readonly distanceSquared: number } | undefined {
+  if (!alive(seat.hero) || seat.scene !== undefined) return undefined;
+  const rps = state();
+  const hero = pointOf(seat.hero);
+  SetRect(rps.rect, hero.x - PICKUP_RANGE, hero.y - PICKUP_RANGE, hero.x + PICKUP_RANGE, hero.y + PICKUP_RANGE);
+  const found: item[] = [];
+  EnumItemsInRect(rps.rect, rps.everything, () => {
+    found.push(GetEnumItem());
+  });
+  let nearest: { readonly item: item; readonly distanceSquared: number } | undefined;
+  for (const loot of found) {
+    if (!IsItemVisible(loot) || IsItemOwned(loot)) continue;
+    const distance = distanceSquared(hero, { x: Math.floor(GetItemX(loot)), y: Math.floor(GetItemY(loot)) });
+    if (distance <= PICKUP_RANGE * PICKUP_RANGE && (nearest === undefined || distance < nearest.distanceSquared)) nearest = { item: loot, distanceSquared: distance };
+  }
+  return nearest;
+}
+
+/** What E reaches now: the nearer of an NPC to talk to and an item to pick up (`interaction`), with the NPC and item themselves. */
+function reachOf(seat: Seat): { readonly reach: Reachable | undefined; readonly npc: Npc | undefined; readonly loot: item | undefined } {
+  const npc = talkTarget(seat), loot = nearestLoot(seat);
+  const reach = interaction(
+    npc === undefined ? undefined : { kind: "talk", name: npc.npc.name, distanceSquared: npc.distanceSquared },
+    loot === undefined ? undefined : { kind: "pickUp", name: GetItemName(loot.item), distanceSquared: loot.distanceSquared },
+  );
+  return { reach, npc: npc?.npc, loot: loot?.item };
+}
+
+/**
+ * E, the interact key: talks to the nearest NPC in talking range or picks up
+ * the nearest item in reach, whichever is nearer. Nothing is ever selected and
+ * the right mouse button turns the camera, so Warcraft's own right-click
+ * pickup and talk never happen. A power-up (a tome, gold coins) is used at
+ * once; anything else goes into the inventory if it has room.
+ */
+function interact(seat: Seat): void {
+  const { reach, npc, loot } = reachOf(seat);
+  if (reach?.kind === "talk" && npc !== undefined) return startScene(seat, npc);
+  if (reach?.kind !== "pickUp" || loot === undefined) return;
+  const powerup = IsItemPowerup(loot);
+  const name = GetItemName(loot);
+  if (!powerup && UnitInventoryCount(seat.hero) >= UnitInventorySize(seat.hero)) return say(seat, `Your inventory is full: ${name} stays on the ground.`);
+  if (UnitAddItem(seat.hero, loot)) say(seat, powerup ? `You use ${name}.` : `You pick up ${name}.`);
+}
+
+/** The inventory's button or I: opens or closes it. A click and a key reach every client, so every client agrees. */
+function toggleInventory(seat: Seat): void {
+  seat.inventoryOpen = seat.inventoryOpen !== true;
+}
+
+/** A click on an inventory slot uses its item: on its own, or else at the soft target. */
+function useItem(seat: Seat, slot: number): void {
+  const held = UnitItemInSlot(seat.hero, slot) as item | undefined;
+  if (held === undefined) return;
+  const used = UnitUseItem(seat.hero, held) || (seat.target !== undefined && UnitUseItemTarget(seat.hero, held, seat.target));
+  if (!used) say(seat, `${GetItemName(held)} can't be used now.`);
+}
+
+/** The hero's inventory as its panel shows it: each slot's icon and charges. */
+function itemViews(seat: Seat): ItemView[] {
+  const views: ItemView[] = [];
+  for (let slot = 0; slot < INVENTORY_SLOTS; slot++) {
+    const held = UnitItemInSlot(seat.hero, slot) as item | undefined;
+    const charges = held === undefined ? 0 : GetItemCharges(held);
+    views.push({ icon: held === undefined ? "" : BlzGetItemIconPath(held), charges: charges > 0 ? `${charges}` : "" });
+  }
+  return views;
+}
+
 function stanceTick(): void {
   questTick();
   for (const seat of state().seats) {
@@ -1118,7 +1113,12 @@ function hudTick(): void {
       manaPercent: percentOf(GetUnitState(hero, UNIT_STATE_MANA), GetUnitState(hero, UNIT_STATE_MAX_MANA)),
       slots: seat.heroInfo.skills.map((skill, index) => slotView(seat, skill, index, ranks, level, points)),
       quests: journalText(activeQuests(flagsOf(seat))),
+      hint: interactHint(reachOf(seat).reach),
+      inventoryOpen: seat.inventoryOpen === true,
+      items: itemViews(seat),
     });
+    // Warcraft's own quest log (F9) follows the same flags, once any scene is over, so its messages don't cover the dialogue.
+    if (seat.scene === undefined) syncQuestLog(seat, questLog(flagsOf(seat)));
   }
 }
 
@@ -1143,7 +1143,9 @@ function hudClick(): void {
   seat.fight.barTick = now();
   const action = hudAction(seat.hud, GetHandleId(clicked));
   if (action === undefined) return;
-  if (action.kind === "learn") learn(seat, action.slot);
+  if (action.kind === "inventory") toggleInventory(seat);
+  else if (action.kind === "use") useItem(seat, action.slot);
+  else if (action.kind === "learn") learn(seat, action.slot);
   else castSkill(seat, action.slot);
 }
 
@@ -1183,6 +1185,8 @@ function key(down: boolean): void {
     if (seat.fight.guardTick !== undefined) guardFootwork(seat);
   } else if (!down) return;
   else if (code === KEY.tab) cycleTarget(seat);
+  else if (code === KEY.e) interact(seat);
+  else if (code === KEY.i) toggleInventory(seat);
   else if (code === KEY.f) attackTarget(seat);
   else if (code === KEY.one) setStance(seat, "vanguard");
   else if (code === KEY.two) setStance(seat, "guard");
@@ -1192,11 +1196,10 @@ function key(down: boolean): void {
   else if (CAMERA_KEYS.includes(code)) setCamera(seat, CAMERA_KEYS.indexOf(code));
 }
 
-// Personal scenes: a hero who walks up to an NPC plays its scene, for his
-// player alone. Units around pause, the hero can't be hurt, the scene fades
-// in from black as its bars slide in, the director cuts and glides between
-// procedural shots, the actors look each other in the eye and gesture, and
-// the NPC, the hero and a soldier of his squad speak in their own voices.
+// Personal scenes (./scenes.ts, ./questRuntime.ts): where this map's NPCs
+// stand, and what the scene engine asks of the map (`installScenes` in
+// install()): its hero standing down, his party, his placeholders, recruits
+// and its interface giving way to the letterbox.
 
 /** Places an NPC for every scene: by each tavern the base map has, facing the center, or near the center without one. */
 function placeNpcs(centerX: number, centerY: number): void {
@@ -1248,107 +1251,6 @@ function placeQuartermaster(seat: Seat, start: Point): void {
   rps.npcs.push({ unit: npc, scene: RECRUIT_SCENE, name: RECRUIT_SCENE.npcName, code, extras: [] });
 }
 
-/** The player's flags: what his scenes remember he did. */
-function flagsOf(seat: Seat): Set<string> {
-  const flags = seat.flags ?? new Set<string>();
-  seat.flags = flags;
-  return flags;
-}
-
-function goldOf(seat: Seat): number {
-  return GetPlayerState(seat.player, PLAYER_STATE_RESOURCE_GOLD);
-}
-
-/**
- * Every 0.5 s: a hero within TALK_RANGE of an NPC starts its scene, unless he
- * talked to it last and hasn't walked away yet; one within BARK_RANGE hears
- * it call out; the "!" over NPCs with something new for him is kept up.
- */
-function talkCheck(seat: Seat): void {
-  const hero = pointOf(seat.hero);
-  if (seat.talkedTo !== undefined && distanceSquared(hero, pointOf(seat.talkedTo)) > TALK_RESET_RANGE * TALK_RESET_RANGE) seat.talkedTo = undefined;
-  markNews(seat);
-  if (!alive(seat.hero)) return;
-  barkCheck(seat, hero);
-  for (const npc of state().npcs) {
-    if (!talkable(npc) || npc.unit === seat.talkedTo || inScene(npc.unit)) continue;
-    if (distanceSquared(hero, pointOf(npc.unit)) <= TALK_RANGE * TALK_RANGE) return startScene(seat, npc);
-  }
-}
-
-/** Whether an NPC can still be talked to: alive, and not turned on anyone. */
-const talkable = (npc: Npc) => alive(npc.unit) && GetPlayerId(GetOwningPlayer(npc.unit)) === PLAYER_NEUTRAL_PASSIVE;
-
-/** Whether an NPC is in someone's scene. */
-function inScene(npc: unit): boolean {
-  return state().seats.some((seat) => seat.scene?.npc === npc);
-}
-
-/**
- * Ambient barks: an NPC with a bark turns to a hero walking past within
- * BARK_RANGE (but not yet close enough to talk) and calls out once, a voiced
- * line over his head for that player alone, until the hero has gone
- * BARK_RESET_RANGE away. The game doesn't stop.
- */
-function barkCheck(seat: Seat, hero: Point): void {
-  const barked = (seat.barked ?? []).filter((npc) => distanceSquared(hero, pointOf(npc)) <= BARK_RESET_RANGE * BARK_RESET_RANGE);
-  seat.barked = barked;
-  for (const npc of state().npcs) {
-    const bark = npc.scene.bark;
-    if (bark === undefined || !talkable(npc) || barked.includes(npc.unit) || npc.unit === seat.talkedTo || inScene(npc.unit)) continue;
-    const at = pointOf(npc.unit);
-    const distance = distanceSquared(hero, at);
-    if (distance > BARK_RANGE * BARK_RANGE || distance <= TALK_RANGE * TALK_RANGE) continue;
-    barked.push(npc.unit);
-    SetUnitFacingTimed(npc.unit, atan2Tenths(hero.y - at.y, hero.x - at.x) / 10, TURN_SECONDS);
-    const gesture = gestureFor(npc.code, bark.mood);
-    if (gesture !== undefined) {
-      SetUnitAnimation(npc.unit, gesture);
-      QueueUnitAnimation(npc.unit, "stand");
-    }
-    speak(seat, npc.code, bark.mood, floorMod(state().ticks, 4), undefined);
-    const tag = CreateTextTag();
-    SetTextTagText(tag, `${npc.name}: ${fillLine(bark.text, lineValues(seat))}`, BARK_TEXT_SIZE);
-    SetTextTagPosUnit(tag, npc.unit, 40);
-    SetTextTagColor(tag, 255, 220, 120, 255);
-    SetTextTagPermanent(tag, false);
-    SetTextTagLifespan(tag, 3.0);
-    SetTextTagFadepoint(tag, 2.0);
-    SetTextTagVisibility(tag, false);
-    if (isLocal(seat)) SetTextTagVisibility(tag, true);
-  }
-}
-
-/** The "!" over each NPC whose scene has something new for this player (`hasNews`), shown to him alone. */
-function markNews(seat: Seat): void {
-  const marks = seat.news ?? new Map<unit, { readonly mark: effect; readonly icon: minimapicon }>();
-  seat.news = marks;
-  const flags = flagsOf(seat);
-  for (const npc of state().npcs) {
-    const marked = marks.get(npc.unit);
-    const news = !off("marks") && hasNews(npc.scene, flags) && talkable(npc);
-    if (news && marked === undefined) {
-      // Every client makes the same mark and minimap icon; every player but this one sees through them.
-      const mark = AddSpecialEffectTarget(NEWS_MODEL, npc.unit, "overhead");
-      const icon = CreateMinimapIconOnUnit(npc.unit, 255, 220, 0, questIconPath(), FOG_OF_WAR_MASKED);
-      SetMinimapIconVisible(icon, false);
-      if (isLocal(seat)) SetMinimapIconVisible(icon, true);
-      else BlzSetSpecialEffectAlpha(mark, 0);
-      marks.set(npc.unit, { mark, icon });
-    } else if (!news && marked !== undefined) {
-      DestroyEffect(marked.mark);
-      DestroyMinimapIcon(marked.icon);
-      marks.delete(npc.unit);
-    }
-  }
-}
-
-/** Warcraft's quest giver icon for the minimap, from the game's own interface skin, or its file if the skin has no such key. */
-function questIconPath(): string {
-  const path = SkinManagerGetLocalPath(QUEST_ICON_SKIN_KEY);
-  return path === "" ? QUEST_ICON_FILE : path;
-}
-
 /** What `-off` can switch off, to find which part of the map changes how something looks. */
 const SWITCHES = ["tint", "ring", "slowmo", "killcam", "talk", "fade", "marks", "root"] as const;
 
@@ -1394,434 +1296,7 @@ function timeCommand(): void {
 /** "-scene": plays the nearest NPC's scene wherever the hero is, for trying scenes out. */
 function sceneCommand(): void {
   const seat = seatOf(GetTriggerPlayer());
-  if (seat === undefined || seat.scene !== undefined) return;
-  const hero = pointOf(seat.hero);
-  let nearest: Npc | undefined, best = 0;
-  for (const npc of state().npcs) {
-    if (!talkable(npc)) continue;
-    const distance = distanceSquared(hero, pointOf(npc.unit));
-    if (nearest === undefined || distance < best) {
-      nearest = npc;
-      best = distance;
-    }
-  }
-  if (nearest === undefined) say(seat, "No one to talk to.");
-  else startScene(seat, nearest);
-}
-
-/** The unit playing an actor in a scene: the hero, the NPC, or the soldier who came along, if any. */
-function actorUnit(seat: Seat, run: SceneRun, actor: Actor): unit | undefined {
-  if (actor === "hero") return seat.hero;
-  if (actor === "npc") return run.npc;
-  return run.squad;
-}
-
-/**
- * The line to play for a node id: the node, or, while the player doesn't meet
- * its conditions or it needs a soldier the hero hasn't brought, the next one
- * after it; undefined at the end.
- */
-function lineAt(seat: Seat, run: SceneRun, id: string | undefined): DialogueNode | undefined {
-  const flags = flagsOf(seat), gold = goldOf(seat);
-  let next = id;
-  for (let guard = 0; guard < 16 && next !== undefined; guard++) {
-    const node = run.scene.nodes.find((candidate) => candidate.id === next);
-    if (node === undefined) return undefined;
-    const castable = actorUnit(seat, run, node.speaker) !== undefined && actorUnit(seat, run, listenerOf(node)) !== undefined;
-    if (castable && meets(node.when, flags, gold, seat.heroInfo.code)) return node;
-    next = node.next;
-  }
-  return undefined;
-}
-
-/**
- * Starts a personal scene: the hero stops, drops his guard and swing, can't
- * be hurt and steps to TALK_DISTANCE from the NPC; a soldier of his squad,
- * if the scene has lines for one, steps up beside him; units within
- * SCENE_PAUSE_RANGE pause, except other players' (they keep playing) and
- * the actors; the player's HUD gives way to the letterbox, faded in from
- * black. The scene opens where the player's flags say (`openingOf`).
- */
-function startScene(seat: Seat, npc: Npc): void {
-  const { hero, fight } = seat;
-  // The run starts on the scene's first node; lineAt then finds where this player's opening leads.
-  const opening = npc.scene.nodes[0];
-  if (!alive(hero) || !alive(npc.unit) || opening === undefined) return;
-  lowerGuard(seat);
-  seat.killCam = undefined;
-  fight.swing = undefined;
-  fight.buffered = undefined;
-  fight.pending = undefined;
-  seat.keys.w = false;
-  seat.keys.a = false;
-  seat.keys.s = false;
-  seat.keys.d = false;
-  IssueImmediateOrder(hero, "stop");
-  SetUnitInvulnerable(hero, true);
-  const npcAt = pointOf(npc.unit);
-  shove(hero, talkSpot(npcAt, pointOf(hero)));
-  const at = pointOf(hero);
-  // A soldier who has lines steps up at the hero's shoulder, a little back, on his left.
-  const wantsSquad = npc.scene.nodes.some((node) => node.speaker === "squad" || node.to === "squad");
-  const member = wantsSquad ? seat.squad.find((candidate) => alive(candidate.unit)) : undefined;
-  if (member !== undefined) {
-    IssueImmediateOrder(member.unit, "stop");
-    shove(member.unit, offset(at.x, at.y, atan2Tenths(npcAt.y - at.y, npcAt.x - at.x), -70, 110));
-  }
-  const others = state().seats.filter((other) => other !== seat).map((other) => other.player);
-  const paused: unit[] = [];
-  for (const other of unitsInRange(at.x, at.y, SCENE_PAUSE_RANGE)) {
-    if (other === hero || other === npc.unit || other === member?.unit || others.includes(GetOwningPlayer(other))) continue;
-    PauseUnit(other, true);
-    paused.push(other);
-  }
-  const squadCode = member === undefined ? undefined : seat.race.army.find((soldier) => soldier.role === member.role)?.code;
-  const run: SceneRun = {
-    scene: npc.scene, npc: npc.unit, node: opening, endTick: now(), voice: undefined, paused, npcName: npc.name, npcCode: npc.code,
-    squad: member?.unit, squadCode, squadName: member === undefined ? "" : GetUnitName(member.unit),
-    startTick: now(), lineStart: now(), lineLength: 1, lines: 0, from: undefined, to: undefined, last: undefined, speakerAt: npcAt,
-    text: "", speakerName: "", closing: undefined, fights: [], turns: [], allies: [],
-  };
-  const first = lineAt(seat, run, openingOf(npc.scene, flagsOf(seat), goldOf(seat), seat.heroInfo.code));
-  if (first === undefined) {
-    for (const unit of paused) PauseUnit(unit, false);
-    SetUnitInvulnerable(hero, false);
-    return;
-  }
-  warmVoices(seat, run);
-  seat.scene = run;
-  showMinimap(minimapShown());
-  seat.fade = { start: now(), toBlack: false };
-  if (isLocal(seat)) {
-    if (seat.hud !== undefined) BlzFrameSetVisible(seat.hud.root, false);
-    // No cinematic mode: it took the player's cursor, keys and clicks, which the scene needs.
-    if (seat.letterbox !== undefined) BlzFrameSetVisible(seat.letterbox.root, true);
-  }
-  playLine(seat, run, first);
-}
-
-/**
- * Warcraft may drop a sound file's first play while it loads it: every
- * recording a scene's lines may play is played once, silent, as it starts.
- */
-function warmVoices(seat: Seat, run: SceneRun): void {
-  const warmed = new Set<string>();
-  for (const node of run.scene.nodes) {
-    const code = actorCode(seat, run, node.speaker);
-    if (code === undefined) continue;
-    const takes = takesOf(code, node.mood);
-    for (let take = 0; take < takes; take++) {
-      const file = voiceFile(voicePrefixOf(code), node.mood, take, takes);
-      if (file === undefined || warmed.has(file)) continue;
-      warmed.add(file);
-      const warm = CreateSound(file, false, false, false, 10, 10, "DefaultEAXON");
-      SetSoundVolume(warm, 0);
-      StartSound(warm);
-      KillSoundWhenDone(warm);
-    }
-  }
-}
-
-/**
- * How many recordings of a mood's kind a unit type's set has, measured in the
- * game the first time a scene needs them (`countTakes`: a file that isn't
- * there lasts 0 ms, `GetSoundFileDuration`) and kept. Every client has the
- * same game files and asks the same questions, so every client counts alike.
- * Never less than 1, so a game that can't tell still plays the first take.
- */
-function takesOf(code: string, mood: Mood): number {
-  const rps = state();
-  const takes = rps.takes ?? new Map<string, number>();
-  rps.takes = takes;
-  const key = `${code}:${mood}`;
-  const known = takes.get(key);
-  if (known !== undefined) return known;
-  const prefix = voicePrefixOf(code);
-  const counted = prefix === undefined ? 0 : countTakes((take) => GetSoundFileDuration(recordingFile(prefix, mood, take)) > 0);
-  // At least the first: if the game can't tell, the line tries take 1, as before.
-  const kept = Math.max(counted, 1);
-  takes.set(key, kept);
-  return kept;
-}
-
-/**
- * A unit type's voice: the first of its profile's file prefixes
- * (`voiceCandidates`) the game has recordings under, asked once and kept. If
- * the game can't tell for any of them, the first is tried as it is.
- */
-function voicePrefixOf(code: string): string | undefined {
-  const rps = state();
-  const voices = rps.voices ?? new Map<string, string>();
-  rps.voices = voices;
-  const known = voices.get(code);
-  if (known !== undefined) return known === "" ? undefined : known;
-  const candidates = voiceCandidates(code);
-  const found = candidates.find((prefix) => PROBE_MOODS.some((mood) => GetSoundFileDuration(recordingFile(prefix, mood, 1)) > 0)) ?? candidates[0];
-  voices.set(code, found ?? "");
-  return found;
-}
-
-/** One mood of each kind of recording, to find a voice by. */
-const PROBE_MOODS: readonly Mood[] = ["neutral", "confirm", "attack", "warcry", "angry"];
-
-/** The unit type an actor speaks with. */
-function actorCode(seat: Seat, run: SceneRun, actor: Actor): string | undefined {
-  if (actor === "hero") return seat.heroInfo.code;
-  if (actor === "npc") return run.npcCode;
-  return run.squadCode;
-}
-
-/**
- * Speaks a mood's recording for a unit type, heard by this player alone:
- * every client makes the sound; only his plays it at full volume. With a
- * `serial`, his client measures the recording and sends its length to every
- * client (`voiceSynced`), so the line stays up as long as it is spoken.
- */
-function speak(seat: Seat, code: string, mood: Mood, variant: number, pitch: number | undefined, serial?: number): sound | undefined {
-  const file = voiceFile(voicePrefixOf(code), mood, variant, takesOf(code, mood));
-  if (file === undefined) return undefined;
-  const voice = CreateSound(file, false, false, false, 10, 10, "DefaultEAXON");
-  SetSoundVolume(voice, isLocal(seat) ? 127 : 0);
-  if (pitch !== undefined) SetSoundPitch(voice, pitch / 100);
-  StartSound(voice);
-  KillSoundWhenDone(voice);
-  if (serial !== undefined && isLocal(seat)) BlzSendSyncData(VOICE_PREFIX, `${serial}:${GetSoundFileDuration(file)}`);
-  return voice;
-}
-
-/** A player's measured voice length reaches every client: his line stays up at least that long (`voiceTicks`). */
-function voiceSynced(): void {
-  const seat = seatOf(GetTriggerPlayer());
-  const run = seat?.scene;
-  if (run === undefined) return;
-  const [serial, ms] = BlzGetTriggerSyncData().split(":");
-  if (S2I(serial ?? "") !== run.lineStart || run.closing !== undefined) return;
-  const voiceMs = S2I(ms ?? "");
-  run.endTick = Math.max(run.endTick, run.lineStart + voiceTicks(voiceMs));
-  if (voiceMs > 0) run.talkUntil = run.lineStart + talkTicks(voiceMs);
-}
-
-/** A speaker stops talking when his voice ends: back to his stand. */
-function talkTick(run: SceneRun): void {
-  if (run.speakerUnit === undefined || run.talkUntil === undefined || now() < run.talkUntil) return;
-  run.talkUntil = undefined;
-  SetUnitAnimation(run.speakerUnit, "stand");
-}
-
-/**
- * Plays a line: the speaker and his listener turn to each other; he gestures (the node's
- * animation, else his mood's) and speaks (the next recording of his mood's
- * kind, at the node's pitch); the line's effects happen; the line shows as
- * text, the speaker's name over it, and any choices show; and the director
- * picks the shot, cutting to it for a new speaker and gliding to it for the
- * same one.
- */
-function playLine(seat: Seat, run: SceneRun, node: DialogueNode): void {
-  stopVoice(run);
-  const speaker = actorUnit(seat, run, node.speaker) ?? seat.hero;
-  const listener = actorUnit(seat, run, listenerOf(node)) ?? run.npc;
-  const from = pointOf(speaker), to = pointOf(listener);
-  // The camera glides from wherever the last line's had got to.
-  const glideFrom = run.to === undefined ? undefined : sceneFraming(run.from, run.to, now() - run.lineStart, run.lineLength);
-  run.node = node;
-  run.lineStart = now();
-  run.lineLength = lineTicks(node.text);
-  run.endTick = run.lineStart + run.lineLength;
-  const toListener = atan2Tenths(to.y - from.y, to.x - from.x);
-  SetUnitFacingTimed(speaker, toListener / 10, TURN_SECONDS);
-  SetUnitFacingTimed(listener, (toListener + 1800) / 10, TURN_SECONDS);
-  // The last speaker falls quiet; this one talks, after his gesture if he has one.
-  if (run.speakerUnit !== undefined && run.speakerUnit !== speaker && run.talkUntil !== undefined) SetUnitAnimation(run.speakerUnit, "stand");
-  const code = actorCode(seat, run, node.speaker);
-  const gesture = node.anim ?? (code === undefined ? gestureOf(node.mood) : gestureFor(code, node.mood));
-  const talk = code === undefined ? TALK_ANIMATION : talkAnimation(code);
-  if (off("talk")) {
-    if (gesture !== undefined) {
-      SetUnitAnimation(speaker, gesture);
-      QueueUnitAnimation(speaker, "stand");
-    }
-  } else if (gesture !== undefined) {
-    SetUnitAnimation(speaker, gesture);
-    QueueUnitAnimation(speaker, talk);
-  } else SetUnitAnimation(speaker, talk);
-  run.speakerUnit = speaker;
-  // Until the voice is measured (`voiceSynced`), he talks for the whole line.
-  run.talkUntil = run.endTick;
-  run.voice = code === undefined ? undefined : speak(seat, code, node.mood, run.lines, node.pitch, run.lineStart);
-  run.lines++;
-  for (const effect of node.effects ?? []) applyEffect(seat, run, effect);
-  const fill = (text: string) => fillLine(text, lineValues(seat));
-  run.speakerName = node.speaker === "hero" ? seat.heroInfo.name : node.speaker === "npc" ? run.npcName : run.squadName;
-  run.text = fill(node.text);
-  // The line as plain text: every client fills every player's, and each sees only his own.
-  if (seat.letterbox !== undefined) showSubtitle(seat.letterbox, run.speakerName, run.text);
-  const states = choiceStates(node.choices ?? [], flagsOf(seat), goldOf(seat), seat.heroInfo.code);
-  if (seat.letterbox !== undefined) {
-    showChoices(seat.letterbox, (node.choices ?? []).map((choice, index) => ({ text: fill(choice.text), state: states[index] ?? "open" })));
-  }
-  const direction = directShot(node, run.last);
-  run.last = { speaker: node.speaker, shot: direction.shot };
-  run.from = direction.glide ? glideFrom : undefined;
-  const listenerCode = actorCode(seat, run, listenerOf(node));
-  run.face = shotFace(direction.shot, code === undefined ? FACE_HEIGHT : faceHeight(code), listenerCode === undefined ? FACE_HEIGHT : faceHeight(listenerCode));
-  run.to = framing(direction.shot, from, to, Math.floor(BlzGetUnitCollisionSize(listener)), run.face);
-  run.speakerAt = from;
-}
-
-/** What a line does: gold, a recruit, a flag, soldiers who join, or enemies who attack once the scene ends. */
-function applyEffect(seat: Seat, run: SceneRun, effect: Effect): void {
-  const hero = pointOf(seat.hero);
-  if (effect.kind === "gold") {
-    SetPlayerState(seat.player, PLAYER_STATE_RESOURCE_GOLD, Math.max(0, goldOf(seat) + effect.amount));
-    say(seat, effect.amount >= 0 ? `${run.npcName} gives you ${effect.amount} gold.` : `You give ${run.npcName} ${-effect.amount} gold.`);
-  } else if (effect.kind === "recruit") recruit(seat, effect.role, effect.cost);
-  else if (effect.kind === "flag") {
-    if (effect.value === false) flagsOf(seat).delete(effect.flag);
-    else flagsOf(seat).add(effect.flag);
-  } else if (effect.kind === "spawn") {
-    for (let index = 0; index < effect.count; index++) {
-      const spot = offset(hero.x, hero.y, seat.yaw.current + 1800, 140, (index * 2 - effect.count + 1) * 80);
-      seat.squad.push({ unit: CreateUnit(seat.player, rawcode(effect.code), spot.x, spot.y, seat.yaw.current / 10), role: effect.role });
-    }
-  } else if (effect.kind === "heal") {
-    SetWidgetLife(seat.hero, BlzGetUnitMaxHP(seat.hero));
-    SetUnitState(seat.hero, UNIT_STATE_MANA, BlzGetUnitMaxMana(seat.hero));
-    say(seat, `${run.npcName} heals you.`);
-  } else if (effect.kind === "ally") {
-    // The NPC himself, or his company of one unit type, joins the hero as the scene ends (`finishScene`).
-    const company = state().npcs.find((npc) => npc.unit === run.npc)?.extras ?? [];
-    const units = effect.code === undefined ? [run.npc] : company.filter((unit) => alive(unit) && GetUnitTypeId(unit) === rawcode(effect.code ?? ""));
-    for (const unit of units) run.allies.push({ unit, tag: effect.tag });
-  } else if (effect.kind === "hostile") {
-    // The NPC himself, or his company of one unit type, turns as the scene ends (`finishScene`).
-    const company = state().npcs.find((npc) => npc.unit === run.npc)?.extras ?? [];
-    const units = effect.code === undefined ? [run.npc] : company.filter((unit) => alive(unit) && GetUnitTypeId(unit) === rawcode(effect.code ?? ""));
-    for (const unit of units) run.turns.push({ unit, tag: effect.tag, hold: effect.hold ?? 0 });
-    if (effect.bounty !== undefined) addBounty(seat, effect.tag, effect.bounty);
-  } else {
-    // Behind the hero, up the road; around the NPC's site; or at a camp past it, away from the map's center:
-    // held until the scene ends, then coming for him. At the scene's objective they stand guard there instead.
-    const npc = pointOf(run.npc);
-    const away = atan2Tenths(hero.y - npc.y, hero.x - npc.x);
-    const outward = atan2Tenths(npc.y - state().center.y, npc.x - state().center.x);
-    const camp = offset(npc.x, npc.y, outward, CAMP_DISTANCE, 0);
-    const objective = effect.at === "objective" ? objectivePoint(run.scene) : undefined;
-    for (let index = 0; index < effect.count; index++) {
-      const around = floorDiv(index * 3600, effect.count);
-      const spot = objective !== undefined ? offset(objective.x, objective.y, around, OBJECTIVE_RADIUS, 0)
-        : effect.at === "site" ? offset(npc.x, npc.y, around, SITE_RADIUS, 0)
-        : effect.at === "camp" ? offset(camp.x, camp.y, around, CAMP_RADIUS, 0)
-        : offset(hero.x, hero.y, away, FIGHT_DISTANCE, (index * 2 - effect.count + 1) * 90);
-      const enemy = CreateUnit(Player(PLAYER_NEUTRAL_AGGRESSIVE), rawcode(effect.code), spot.x, spot.y, atan2Tenths(hero.y - spot.y, hero.x - spot.x) / 10);
-      if (objective === undefined) {
-        PauseUnit(enemy, true);
-        run.paused.push(enemy);
-        run.fights.push(enemy);
-      }
-      if (effect.tag !== undefined) tagUnit(seat, effect.tag, enemy);
-    }
-    if (objective !== undefined && effect.tag !== undefined) markObjective(seat, effect.tag, objective, run.scene.objective?.name ?? "the objective");
-    if (effect.tag !== undefined && effect.bounty !== undefined) addBounty(seat, effect.tag, effect.bounty);
-  }
-}
-
-/** Where a scene's objective stands on this map (`objectiveSpot`), or undefined for a scene without one. */
-function objectivePoint(scene: Scene): Point | undefined {
-  if (scene.objective === undefined) return undefined;
-  const area = bj_mapInitialPlayableArea;
-  return objectiveSpot(state().center, scene.objective, {
-    minX: Math.floor(GetRectMinX(area)), minY: Math.floor(GetRectMinY(area)), maxX: Math.floor(GetRectMaxX(area)), maxY: Math.floor(GetRectMaxY(area)),
-  });
-}
-
-/**
- * Marks a quest's objective on this player's minimap, once per tag: Warcraft's
- * quest objective icon, which every client makes and only he sees, a ping
- * there on his minimap, and a message naming the place. `questTick` takes the
- * icon down once every unit under the tag has fallen.
- */
-function markObjective(seat: Seat, tag: string, spot: Point, name: string): void {
-  const rps = state();
-  const marks = rps.objectives ?? [];
-  rps.objectives = marks;
-  const key = `${seat.id}:${tag}`;
-  if (marks.some((mark) => mark.key === key)) return;
-  const skinned = SkinManagerGetLocalPath(OBJECTIVE_ICON_SKIN_KEY);
-  const icon = CreateMinimapIcon(spot.x, spot.y, 255, 220, 0, skinned === "" ? OBJECTIVE_ICON_FILE : skinned, FOG_OF_WAR_MASKED);
-  SetMinimapIconVisible(icon, false);
-  if (isLocal(seat)) {
-    SetMinimapIconVisible(icon, true);
-    PingMinimapEx(spot.x, spot.y, OBJECTIVE_PING_SECONDS, 255, 220, 0, false);
-  }
-  marks.push({ key, icon });
-  say(seat, `${name.charAt(0).toUpperCase()}${name.slice(1)} is marked on your map.`);
-}
-
-/** Files a unit a scene raised or turned under its tag, for this player. */
-function tagUnit(seat: Seat, tag: string, unit: unit): void {
-  const rps = state();
-  const tagged = rps.tagged ?? new Map<string, unit[]>();
-  rps.tagged = tagged;
-  const key = `${seat.id}:${tag}`;
-  const units = tagged.get(key) ?? [];
-  units.push(unit);
-  tagged.set(key, units);
-}
-
-/** A bounty for this player on a tag, once: it pays when every unit under the tag has fallen (`questTick`). */
-function addBounty(seat: Seat, tag: string, bounty: Bounty): void {
-  const rps = state();
-  const bounties = rps.bounties ?? [];
-  rps.bounties = bounties;
-  const key = `${seat.id}:${tag}`;
-  if (!bounties.some((entry) => entry.key === key)) bounties.push({ seat: seat.id, key, bounty });
-}
-
-/**
- * Every 0.5 s: turned units whose daze is over come for their hero; allies
- * whose fight is won go back to their post, neutral again; and a bounty whose
- * tag's units have all fallen pays its gold, sets its flag and tells its
- * player.
- */
-function questTick(): void {
-  const rps = state();
-  const tick = now();
-  const held = rps.held ?? [];
-  rps.held = held.filter((entry) => {
-    if (tick < entry.until) return true;
-    const seat = rps.seats.find((candidate) => candidate.id === entry.seat);
-    PauseUnit(entry.unit, false);
-    if (seat !== undefined && alive(entry.unit)) IssueTargetOrder(entry.unit, "attack", seat.hero);
-    return false;
-  });
-  const won = (key: string) => {
-    const units = rps.tagged?.get(key) ?? [];
-    return units.length > 0 && !units.some((unit) => alive(unit));
-  };
-  const allies = rps.allies ?? [];
-  rps.allies = allies.filter((entry) => {
-    if (!won(entry.key)) return true;
-    SetUnitOwner(entry.unit, Player(PLAYER_NEUTRAL_PASSIVE), false);
-    IssuePointOrder(entry.unit, "move", entry.post.x, entry.post.y);
-    return false;
-  });
-  const objectives = rps.objectives ?? [];
-  rps.objectives = objectives.filter((mark) => {
-    if (!won(mark.key)) return true;
-    DestroyMinimapIcon(mark.icon);
-    return false;
-  });
-  const bounties = rps.bounties ?? [];
-  rps.bounties = bounties.filter((entry) => {
-    const units = rps.tagged?.get(entry.key) ?? [];
-    if (units.length === 0 || units.some((unit) => alive(unit))) return true;
-    const seat = rps.seats.find((candidate) => candidate.id === entry.seat);
-    if (seat === undefined) return false;
-    SetPlayerState(seat.player, PLAYER_STATE_RESOURCE_GOLD, goldOf(seat) + entry.bounty.gold);
-    if (entry.bounty.flag !== undefined) flagsOf(seat).add(entry.bounty.flag);
-    say(seat, entry.bounty.text);
-    return false;
-  });
+  if (seat !== undefined) playNearest(seat);
 }
 
 /**
@@ -1877,144 +1352,6 @@ function recruit(seat: Seat, role: Role, cost: number): void {
     seat.squad.push({ unit: CreateUnit(seat.player, rawcode(soldier.code), spot.x, spot.y, seat.yaw.current / 10), role });
   });
   say(seat, `Two ${name} join you.`);
-}
-
-/**
- * The local player's scene camera, every tick: the line's framing as
- * `sceneFraming` has it this tick (gliding, then drifting), locked to the
- * hero by an offset, at the speaker's face height on a slope. A cut's first
- * tick is instant; the rest move over one tick, so the glide runs smooth.
- */
-function applySceneCamera(seat: Seat, run: SceneRun, hero: Point): void {
-  if (run.to === undefined) return;
-  const rps = state();
-  const elapsed = now() - run.lineStart;
-  const shot = sceneFraming(run.from, run.to, elapsed, run.lineLength);
-  const duration = elapsed === 0 && run.from === undefined ? 0 : CAMERA_PERIOD;
-  SetCameraTargetController(seat.hero, shot.target.x - hero.x, shot.target.y - hero.y, false);
-  SetCameraField(CAMERA_FIELD_ROTATION, shot.yaw / 10, duration);
-  SetCameraField(CAMERA_FIELD_TARGET_DISTANCE, shot.distance, duration);
-  SetCameraField(CAMERA_FIELD_ANGLE_OF_ATTACK, shot.attack / 10, duration);
-  SetCameraField(CAMERA_FIELD_FIELD_OF_VIEW, shot.fieldOfView, duration);
-  // Heads stay framed on a slope: the camera rises by however far the speaker stands above the shot's target.
-  MoveLocation(rps.location, run.speakerAt.x, run.speakerAt.y);
-  const speakerZ = GetLocationZ(rps.location);
-  MoveLocation(rps.location, shot.target.x, shot.target.y);
-  const targetZ = GetLocationZ(rps.location);
-  SetCameraField(CAMERA_FIELD_ZOFFSET, (run.face ?? FACE_HEIGHT) + Math.max(0, speakerZ - targetZ), duration);
-}
-
-function stopVoice(run: SceneRun): void {
-  if (run.voice !== undefined) StopSound(run.voice, false, true);
-  run.voice = undefined;
-}
-
-/** The line after this one, or the end: a line with choices waits for one. */
-function advance(seat: Seat, run: SceneRun): void {
-  if (run.node.choices !== undefined) return;
-  const next = lineAt(seat, run, run.node.next);
-  if (next === undefined) endScene(seat, run);
-  else playLine(seat, run, next);
-}
-
-/** Space: skips a line without choices, cutting its voice short. */
-function skipLine(seat: Seat, run: SceneRun): void {
-  if (run.closing === undefined && run.node.choices === undefined) advance(seat, run);
-}
-
-/** A choice, by click or 1 to 4, jumps to its node, if the player can take it. */
-function chooseLine(seat: Seat, run: SceneRun, index: number): void {
-  const choice = run.node.choices?.[index];
-  if (run.closing !== undefined || choice === undefined || !meets(choice.when, flagsOf(seat), goldOf(seat), seat.heroInfo.code)) return;
-  const next = lineAt(seat, run, choice.next);
-  if (next === undefined) endScene(seat, run);
-  else playLine(seat, run, next);
-}
-
-/**
- * Every camera tick of a scene: a line without choices advances when its time
- * is up, and, once the scene is closing, it finishes when the fade to black
- * has. The player's own client moves the camera.
- */
-function sceneTick(seat: Seat, run: SceneRun): void {
-  const hero = pointOf(seat.hero);
-  if (run.closing !== undefined) {
-    if (now() - run.closing >= FADE_TICKS) return finishScene(seat, run);
-  } else {
-    talkTick(run);
-    if (run.node.choices === undefined && now() >= run.endTick) advance(seat, run);
-  }
-  if (seat.scene !== run || !isLocal(seat)) return;
-  applySceneCamera(seat, run, hero);
-}
-
-/** Ends the scene, at its last line or on Esc: the voice stops, the panel and the choices go and the screen fades to black (`finishScene` follows). */
-function endScene(seat: Seat, run: SceneRun): void {
-  if (run.closing !== undefined) return;
-  stopVoice(run);
-  run.closing = now();
-  seat.fade = { start: now(), toBlack: true };
-  if (seat.letterbox !== undefined) {
-    showChoices(seat.letterbox, []);
-    showSubtitle(seat.letterbox, "", "");
-  }
-}
-
-/**
- * Finishes the scene under the black: units unpause, any enemies the scene
- * raised come for the hero, the hero can be hurt again, the actors stand, the
- * player remembers the scene, the HUD and the hero's camera come back, and
- * the screen fades in from black.
- */
-function finishScene(seat: Seat, run: SceneRun): void {
-  for (const unit of run.paused) PauseUnit(unit, false);
-  for (const enemy of run.fights) IssueTargetOrder(enemy, "attack", seat.hero);
-  // Those the scene turned join the hostile creeps, can be hurt, and come for the hero, dazed a while first if held.
-  // Those who promised to help join the hero's side, can't be hurt, and go at the enemy; `questTick` sends them home after.
-  // With an objective, they set out for it; without, they go at the hero's foes where he stands.
-  const rally = run.allies.length > 0 ? objectivePoint(run.scene) ?? pointOf(seat.hero) : undefined;
-  for (const ally of run.allies) {
-    const allies = state().allies ?? [];
-    allies.push({ unit: ally.unit, key: `${seat.id}:${ally.tag}`, post: pointOf(ally.unit) });
-    state().allies = allies;
-    SetUnitOwner(ally.unit, seat.player, false);
-    if (rally !== undefined) IssuePointOrder(ally.unit, "attack", rally.x, rally.y);
-  }
-  for (const turn of run.turns) {
-    SetUnitInvulnerable(turn.unit, false);
-    SetUnitOwner(turn.unit, Player(PLAYER_NEUTRAL_AGGRESSIVE), true);
-    tagUnit(seat, turn.tag, turn.unit);
-    if (turn.hold <= 0) IssueTargetOrder(turn.unit, "attack", seat.hero);
-    else {
-      PauseUnit(turn.unit, true);
-      const held = state().held ?? [];
-      held.push({ unit: turn.unit, until: now() + floorDiv(turn.hold * 100, 3), seat: seat.id });
-      state().held = held;
-    }
-  }
-  for (const actor of [seat.hero, run.npc, run.squad]) if (actor !== undefined) SetUnitAnimation(actor, "stand");
-  SetUnitInvulnerable(seat.hero, false);
-  flagsOf(seat).add(seenFlag(run.scene));
-  seat.scene = undefined;
-  seat.talkedTo = run.npc;
-  seat.fade = { start: now(), toBlack: false };
-  markNews(seat);
-  if (isLocal(seat)) {
-    if (seat.letterbox !== undefined) BlzFrameSetVisible(seat.letterbox.root, false);
-    if (seat.hud !== undefined) BlzFrameSetVisible(seat.hud.root, true);
-    SetCameraTargetController(seat.hero, 0, 0, false);
-  }
-  // Warcraft's interface comes back as it was: everything goes where the map keeps it again.
-  arrangeInterface();
-}
-
-/** Every camera tick: a player's fade runs its course on his own screen, and is dropped once it has faded in. */
-function fadeTick(seat: Seat): void {
-  const fade = seat.fade;
-  if (fade === undefined) return;
-  const elapsed = now() - fade.start;
-  if (isLocal(seat) && seat.letterbox !== undefined) setFade(seat.letterbox, off("fade") ? 0 : fadeAlpha(elapsed, fade.toBlack));
-  if (!fade.toBlack && elapsed >= FADE_TICKS) seat.fade = undefined;
 }
 
 // Picking: each player chooses a race, then one of its heroes, by click or
@@ -2078,7 +1415,7 @@ function finishPick(pick: Pick, race: number, hero: number): void {
     applyCamera(seat, heroX, heroY);
   }
   const keys = seat.heroInfo.skills.map((skill, index) => skill.targeting === "passive" ? `${skill.name} (passive)` : `${SKILL_KEYS[index]} ${skill.name}`).join(", ");
-  say(seat, `WASD moves the ${seat.heroInfo.name}, hold the right mouse button and drag to turn the camera, left click or Space swings, hold Q to guard (early: parry), Tab targets, F sends the squad at it, 1 Vanguard, 2 Tight Guard. Skills: ${keys}; click the spell bar too, + or L learns. 6 to 0 and - switch cameras. Your party is empty: walk up to the quartermaster nearby to recruit soldiers, and to the sergeant by a tavern to talk (Space skips a line, 1 to 4 choose, Esc leaves). Hold outposts for gold.`);
+  say(seat, `WASD moves the ${seat.heroInfo.name}, hold the right mouse button and drag to turn the camera, left click or Space swings, hold Q to guard (early: parry), Tab targets, F sends the squad at it, 1 Vanguard, 2 Tight Guard. Skills: ${keys}; click the spell bar too, + or L learns. 6 to 0 and - switch cameras. E talks to whoever is near or picks up an item, I opens your inventory. Your party is empty: press E by the quartermaster nearby to recruit soldiers, and by the sergeant at a tavern to talk (Space skips a line, 1 to 4 choose, Esc leaves). Hold outposts for gold.`);
 }
 
 // Outposts: capture every second, income every five.
@@ -2155,6 +1492,50 @@ function incomeTick(): void {
 export function install(this: void): void {
   configureRuntime({ filePrefix: "rps", readyPrefix: "RPS_HRR", globalPrefix: "__rps" });
   installDispatch();
+  installScenes({
+    state: () => state(),
+    now: () => now(),
+    switchedOff: (feature) => off(feature),
+    standDown: (scene) => {
+      const seat = seatFor(scene);
+      lowerGuard(seat);
+      seat.killCam = undefined;
+      seat.fight.swing = undefined;
+      seat.fight.buffered = undefined;
+      seat.fight.pending = undefined;
+      seat.keys.w = false;
+      seat.keys.a = false;
+      seat.keys.s = false;
+      seat.keys.d = false;
+      IssueImmediateOrder(seat.hero, "stop");
+    },
+    sidekick: (scene) => {
+      const seat = seatFor(scene);
+      const member = seat.squad.find((candidate) => alive(candidate.unit));
+      return member === undefined ? undefined : { unit: member.unit, code: seat.race.army.find((soldier) => soldier.role === member.role)?.code };
+    },
+    lineValues: (scene) => lineValues(seatFor(scene)),
+    recruit: (scene, role, cost) => recruit(seatFor(scene), role, cost),
+    join: (scene, code, count, role) => {
+      const seat = seatFor(scene);
+      const hero = pointOf(seat.hero);
+      for (let index = 0; index < count; index++) {
+        const spot = offset(hero.x, hero.y, seat.yaw.current + 1800, 140, (index * 2 - count + 1) * 80);
+        seat.squad.push({ unit: CreateUnit(seat.player, rawcode(code), spot.x, spot.y, seat.yaw.current / 10), role });
+      }
+    },
+    sceneShown: (scene, shown) => {
+      const seat = seatFor(scene);
+      if (shown) {
+        showMinimap(minimapShown());
+        if (isLocal(seat) && seat.hud !== undefined) BlzFrameSetVisible(seat.hud.root, false);
+      } else {
+        if (isLocal(seat) && seat.hud !== undefined) BlzFrameSetVisible(seat.hud.root, true);
+        // Warcraft's interface comes back as it was: everything goes where the map keeps it again.
+        arrangeInterface();
+      }
+    },
+  });
   on("rps.camera", cameraTick);
   on("rps.occlusion", occlusionTick);
   on("rps.stance", stanceTick);

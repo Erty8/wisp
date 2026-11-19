@@ -15,8 +15,10 @@ from TypeScript compiled to Lua, like the [sample map](sample-map.md), and
 shares its layout: pure rules in src/rules.ts and src/layout.ts, the entry in
 src/main.ts, the combat rules in src/combat.ts, the races, heroes and armies
 in src/roster.ts, the picker in src/picker.ts, the interface in src/hud.ts,
-dialogue scenes with text-only lines (src/dialogue.ts, src/letterbox.ts),
-the kill cam in src/killcam.ts, main.ts's constants in src/constants.ts, and
+dialogue scenes with text-only lines (src/dialogue.ts, src/letterbox.ts)
+played by the scene engine (src/scenes.ts, src/questRuntime.ts,
+src/sceneHost.ts; see "The scene engine and its host"), the quests'
+data and journal (src/quests.ts, src/journal.ts), the kill cam in src/killcam.ts, main.ts's constants in src/constants.ts, and
 the same four tsconfigs. Lua lets one function hold at most 200 locals, and
 main.ts compiles to one: its top-level functions and constants are each one.
 An imported name takes none (the compiled Lua reads it through its module),
@@ -57,6 +59,8 @@ texture in Warcraft; the roster's icon names are untested there yet.
 | Right mouse button (held, drag) | Turn the camera: dragging across the whole screen turns it a full turn. |
 | Left click, Space | Swing, a three-hit combo: at the targeted enemy, the hero turning to face him, or at his own front without a target; the click says when, not where. |
 | Q (held) | Guard: a hit from the front in the first 0.24 s is parried, later ones blocked for mana. |
+| E | Interact: talk to the nearest NPC within 350, or pick up the nearest item within 200, whichever is nearer (see Items). The hint over the spell bar says which. |
+| I, or the Inventory button | Open or close the inventory panel in the bottom-right corner; a click on a slot uses its item. |
 | Space, 1 to 4 (in a scene) | Skip a line; choose a reply. |
 | `-scene` (chat) | Play the nearest NPC's scene now, wherever the hero is. |
 | `-off NAME`, `-on NAME` (chat) | Switch a recent visual part of the map off or back on for every player, from the next time it acts, to find which one changes how something looks: `tint` (the target's red cast), `ring` (its ground ring), `slowmo` (the kill cam's slow motion), `killcam`, `talk` (talk animations and gestures), `fade`, `marks` (the "!" and minimap quest icons), `root` (rooting the idle hero), or `all`. `-off` alone lists them. |
@@ -262,7 +266,7 @@ the [number rules](../plugins/number-rules.ts) (wisp:plugins/number-rules.ts) re
 | --- | --- | --- |
 | 0.03 s | `rps.camera` | Lands, ends and thaws swings, moves shots and freezes a raised guard (`fightTick`); every third tick picks a target for a hero without one; counts the 4 s combat timer down; every fifth tick (0.15 s) re-issues WASD moves and holds the hero's ground (`holdGround`); then turns the local camera by the right-mouse drag and applies it. |
 | 0.10 s | `rps.occlusion` | Hides trees between each player's camera eye and hero. |
-| 0.10 s | `rps.hud` | Fills every player's health and mana bars and spell bar. |
+| 0.10 s | `rps.hud` | Fills every player's health and mana bars, spell bar, quest journal, interact hint and inventory, and brings his Warcraft quest log up to date. |
 | 0.5 s | `rps.stance` | Orders strayed retinue units back to their stance slots; drops a dead soft target. |
 | 1 s | `rps.capture` | Hands each outpost to a player with units in 350 range and no enemies there. |
 | 5 s | `rps.income` | Pays each player 20 gold per outpost they own. |
@@ -412,10 +416,49 @@ Releasing WASD stops him where he stands.
 
 ## Dialogue scenes
 
-A hero who walks within 350 of an NPC plays that NPC's scene, for his player
-alone: a personal scene. The other player keeps playing, so nothing of theirs
-pauses. The same NPC starts its scene again only once the hero has walked
-500 away. `-scene` plays the nearest NPC's scene from anywhere, for trying
+**The scene engine and its host**: scenes and their quests run in three
+modules apart from the map's entry, so another map can run them by
+supplying what they ask of it:
+
+- src/scenes.ts plays scenes: barks and the "!" marks (`talkCheck`), the
+  nearest NPC in talking range (`talkTarget`), starting (`startScene`), playing, advancing and ending a scene, voices,
+  the scene camera and the fades (`sceneTick`, `fadeTick`), Space, Esc,
+  1 to 4 and choice clicks (`skipLine`, `endScene`, `chooseLine`), the voice
+  length sync (`voiceSynced`) and `-scene` (`playNearest`).
+- src/questRuntime.ts runs what a line's `fight`, `hostile` and `ally`
+  effects put in the world (`raiseFight`, `turn`, `enlist`), lets them loose
+  as the scene ends (`releaseScene`), marks objectives, and pays bounties and
+  sends allies home every 0.5 s (`questTick`).
+- src/questLog.ts keeps each player's quests in Warcraft's own quest log
+  (`syncQuestLog`; see "Warcraft's quest log").
+- src/sceneHost.ts is the contract between them and the map. A
+  `SceneSeat` is what the engine reads and keeps per player (his hero, its
+  rawcode and name, his letterbox, scene, flags, barks, "!" marks, fade and
+  quests in Warcraft's log);
+  the map's own player record carries these fields among its own. A
+  `SceneState` names the engine's fields in the map's state global (the
+  NPCs, the center, the shared group and location, voices, tags, bounties,
+  objectives, held units and allies), so a hot reload keeps them as it keeps
+  the rest. A `SceneHost` is what the map supplies, from install() through
+  `installScenes`, so a reloaded bundle rebinds it: its state and clock,
+  its debugging switches, standing the hero down as a scene starts, a
+  soldier to stand beside him, the line placeholders, `recruit` and `spawn`
+  effects (the map's own party), and hiding and bringing back its own
+  interface around a scene. Its members are plain functions with no `self`
+  in Lua, so the map hands in arrow functions.
+
+src/main.ts places this map's NPCs (taverns, wanderers, quartermasters,
+quest sites), implements the host, and calls the engine from its timers,
+keys and clicks. The scene modules still read the map's pure rules and data
+(src/dialogue.ts, src/units.ts, src/letterbox.ts, src/rules.ts,
+src/combat.ts, src/constants.ts); a map that runs them today copies those
+too.
+
+E, the interact key, near an NPC (within 350) plays that NPC's scene, for
+his player alone: a personal scene. The other player keeps playing, so
+nothing of theirs pauses. Walking up to an NPC only shows "E  Talk to ..."
+over the spell bar (`interactHint`); E can start the same NPC's scene again
+at once. `-scene` plays the nearest NPC's scene from anywhere, for trying
 scenes out.
 
 **Unit profiles** (src/units.ts, `UNITS`): everything the map knows about a
@@ -717,14 +760,73 @@ under way, and hides it with the rest of the HUD during a scene. The patrol's
 search at the eastern mine has no ending yet, so the journal drops the quest
 once Ilyra has pointed the way.
 
+**Warcraft's quest log** (src/questLog.ts): the same quests also fill
+Warcraft's own quest log, the dialog F9 opens. `questLog` (src/journal.ts)
+lists every quest a player has taken, once per title in the journal's
+order: active, with the objective of its first active stage, or done, with
+the objective of the last stage he finished (a stage is taken once every
+flag it starts on is set, and finished once a flag that ends it is set). A
+quest he never took stays out, so a path that settles a quest without
+taking it (hiring Gor'mak's trolls outright, ordering Haldric down) adds
+nothing. Every 0.1 s, once any scene of his is over, `syncQuestLog` brings
+his log up to date: a newly taken quest is created as an optional quest
+with a scroll icon (`QUEST_LOG_ICON`, BTNSnazzyScroll.blp), its description
+the objective; a changed one is rewritten; a done one is marked completed
+and stays in the log. Each change (`logChange`: discovered, updated,
+completed, each at most once) shows Warcraft's quest message style to him
+(`logMessage`: "QUEST DISCOVERED", "QUEST UPDATE" or "QUEST COMPLETED" in
+gold, the title and the objective), plays Warcraft's matching quest sound
+(`bj_questDiscoveredSound` and the others, which `InitBlizzard` makes) and
+flashes the quest button. Warcraft's log is one for every player: every
+client creates every player's quests alike, and only each player's own
+client enables his (`QuestSetEnabled`), as with his minimap icons. The log
+keeps them on his seat (`questLog`), so a hot reload keeps them. The quest
+button itself is moved below the screen with the rest of the top bar; F9
+should still open the log, as F10 and F12 still open theirs. The log, its
+icon, the per-player enabling and F9 are untested in Warcraft yet. The Lost
+Patrol shows completed once Ilyra has pointed the way, since its search has
+no ending yet.
+
 The voice lengths, look-at, gestures and camera glides are untested in
 Warcraft yet: a missing recording plays nothing and the line still shows.
+
+## Items
+
+Nothing is ever selected and the right mouse button turns the camera, so
+Warcraft's own pickup (a right click on an item) never happens, and
+`holdGround` would cancel its order anyway. E, the interact key, picks items
+up instead (`interact`): it reaches the nearest NPC in talking range
+(`talkTarget`) and the nearest item lying within 200 of the hero
+(`nearestLoot`, `PICKUP_RANGE`), and acts on the nearer (`interaction`;
+talking wins a tie, so an NPC standing on loot still answers). Every 0.1 s
+the HUD shows what E would do over the spell bar ("E  Talk to Sergeant
+Brenn", "E  Pick up Claws of Attack": `interactHint`, `INTERACT_HINT`). A
+power-up (a tome, gold coins) is used at once ("You use ..."); anything else
+goes into his inventory ("You pick up ...") if it has room, else it stays on
+the ground and he is told. Every client enumerates the same items in the
+same order (`EnumItemsInRect`), so every client finds the same one. Headless
+has no item queries, so the journey finds none; it presses E with nothing in
+reach.
+
+**The inventory**: Warcraft's own inventory is below the screen with the
+rest of its interface, and shows only a selected unit's, so the HUD has its
+own. The Inventory button in the bottom-right corner (`INVENTORY_BUTTON`,
+Warcraft's dialog button style), or I, opens and closes a panel above it
+(`INVENTORY_PANEL`) with the hero's 6 slots, 3 across and 2 down as in
+Warcraft's (`inventorySlot`): each slot shows its item's icon
+(`BlzGetItemIconPath`) and charges. A click on a slot uses its item
+(`useItem`): on its own (`UnitUseItem`), or else at the soft target
+(`UnitUseItemTarget`); an item that can't be used now says so. A click and
+a key reach every client, so the panel's open state (`inventoryOpen`) is the
+same in all; each player sees only his own. The panel starts closed; the
+journey opens and closes it with I. Pickup, power-ups, the hint, the panel,
+its icons and item use are untested in Warcraft yet.
 
 ## Recruiting
 
 The party starts empty. A quartermaster, a soldier of the player's race,
-stands 400 from each player's start location toward the map's center; walking
-up to him (or `-scene` nearby) plays `RECRUIT_SCENE`, a personal scene like
+stands 400 from each player's start location toward the map's center; E beside
+him (or `-scene` nearby) plays `RECRUIT_SCENE`, a personal scene like
 any other. He offers the race's soldiers two at a time: two melee for 60 gold
 or two ranged for 80 (each greyed out without the gold), or "Not now". After
 a hire he asks "Anyone else?" with the same choices, until the hero says not

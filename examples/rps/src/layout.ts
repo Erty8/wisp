@@ -3,7 +3,7 @@
 // mana bars in the bottom-left corner and a spell bar at the bottom center, so
 // the low camera's view stays open. Boxes are in thousandths of the 0.8 by 0.6 frame
 // space, measured from the bottom-left corner.
-import { floorDiv } from "wisp/src/sim/intMath";
+import { floorDiv, floorMod } from "wisp/src/sim/intMath";
 
 export interface Box {
   readonly left: number;
@@ -26,6 +26,19 @@ export const MINIMAP: Box = { left: SCREEN_WIDTH - MARGIN - MINIMAP_SIZE, bottom
 
 /** The quest journal: text at the right edge under the minimap, above where a scene's choices stack. */
 export const QUEST_LOG: Box = { left: SCREEN_WIDTH - MARGIN - 180, bottom: 270, width: 180, height: MINIMAP.bottom - 10 - 270 };
+
+/** The button that opens and closes the inventory, in the bottom-right corner. */
+export const INVENTORY_BUTTON: Box = { left: SCREEN_WIDTH - MARGIN - 116, bottom: MARGIN, width: 116, height: 22 };
+/** The inventory's 6 slots, 3 across and 2 down as in Warcraft's own, above its button, on a panel. */
+export const INVENTORY_COLUMNS = 3;
+const ITEM_SIZE = 34, ITEM_STEP = 38, ITEM_BOTTOM = INVENTORY_BUTTON.bottom + INVENTORY_BUTTON.height + 8;
+export function inventorySlot(index: number): Box {
+  const column = floorMod(index, INVENTORY_COLUMNS), row = floorDiv(index, INVENTORY_COLUMNS);
+  return { left: INVENTORY_BUTTON.left + 2 + column * ITEM_STEP, bottom: ITEM_BOTTOM + (1 - row) * ITEM_STEP, width: ITEM_SIZE, height: ITEM_SIZE };
+}
+export const INVENTORY_PANEL: Box = { left: INVENTORY_BUTTON.left - 2, bottom: ITEM_BOTTOM - 4, width: INVENTORY_BUTTON.width + 4, height: 2 * ITEM_STEP + 4 };
+/** What E would do, as a line of text over the spell bar. */
+export const INTERACT_HINT: Box = { left: 250, bottom: 84, width: 300, height: 16 };
 
 /** The spell bar: 4 square slots at the bottom center, each with its learn button above it. */
 export const SPELL_SLOTS = 4;
@@ -82,6 +95,9 @@ export function layoutBoxes(): readonly { readonly name: string; readonly box: B
     { name: "mana bar", box: MANA_BAR },
     ...Array.from({ length: SPELL_SLOTS }, (_, index) => ({ name: `spell ${index}`, box: spellSlot(index) })),
     ...Array.from({ length: SPELL_SLOTS }, (_, index) => ({ name: `learn ${index}`, box: learnButton(index) })),
+    { name: "inventory button", box: INVENTORY_BUTTON },
+    { name: "inventory panel", box: INVENTORY_PANEL },
+    { name: "interact hint", box: INTERACT_HINT },
   ];
 }
 

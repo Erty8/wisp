@@ -2,7 +2,8 @@
 // the right of his screen under the minimap. It is worked out from the flags
 // his scenes set (`Condition`, `meets`), so a quest is active while its
 // conditions hold and drops off once the flag that settles it is set; nothing
-// else is stored.
+// else is stored. The same flags give each quest's line in Warcraft's own
+// quest log (`questLog`, ./questLog.ts): under way, or done.
 import { type Condition, meets } from "./dialogue";
 
 /** A quest the journal can list: its title, when it is active, and what to do next. */
@@ -38,4 +39,54 @@ const END = "|r";
 export function journalText(quests: readonly JournalEntry[]): string {
   if (quests.length === 0) return "";
   return [`${GOLD}Quests${END}`, ...quests.map((quest) => `${GOLD}${quest.title}${END}|n${quest.objective}`)].join("|n|n");
+}
+
+/** A quest as Warcraft's quest log shows it: under way with its current objective, or done with its last. */
+export interface LogEntry {
+  readonly title: string;
+  readonly state: "active" | "done";
+  readonly objective: string;
+}
+
+/** Whether a journal entry's quest has begun: every flag it starts on is set. */
+const started = (entry: JournalEntry, flags: ReadonlySet<string>) =>
+  entry.when.every((condition) => !("flag" in condition) || flags.has(condition.flag));
+/** Whether a begun entry is over: a flag that ends it is set. */
+const finished = (entry: JournalEntry, flags: ReadonlySet<string>) =>
+  started(entry, flags) && entry.when.some((condition) => "notFlag" in condition && flags.has(condition.notFlag));
+
+/**
+ * Every quest a player with `flags` has taken, once per title in the
+ * journal's order: active with its first active stage's objective, else done
+ * with the objective of the last stage he finished. A quest never taken is
+ * left out, so the log shows only what he has found.
+ */
+export function questLog(flags: ReadonlySet<string>): LogEntry[] {
+  const titles: string[] = [];
+  for (const entry of JOURNAL) if (titles.indexOf(entry.title) < 0) titles.push(entry.title);
+  const log: LogEntry[] = [];
+  for (const title of titles) {
+    const stages = JOURNAL.filter((entry) => entry.title === title);
+    const active = stages.find((entry) => meets(entry.when, flags, 0));
+    const done = stages.filter((entry) => finished(entry, flags));
+    const last = done[done.length - 1];
+    if (active !== undefined) log.push({ title, state: "active", objective: active.objective });
+    else if (last !== undefined) log.push({ title, state: "done", objective: last.objective });
+  }
+  return log;
+}
+
+/** What changed in a quest since the log last showed it, as Warcraft announces it; undefined when nothing did. */
+export type LogChange = "discovered" | "updated" | "completed";
+
+export function logChange(known: { readonly state: string; readonly objective: string } | undefined, entry: LogEntry): LogChange | undefined {
+  if (entry.state === "done") return known?.state === "done" ? undefined : "completed";
+  if (known === undefined) return "discovered";
+  return known.state === entry.state && known.objective === entry.objective ? undefined : "updated";
+}
+
+/** The message a change shows the player, in Warcraft's quest message style: its kind in gold, the title, and the objective. */
+export function logMessage(change: LogChange, entry: LogEntry): string {
+  const heading = change === "discovered" ? "QUEST DISCOVERED" : change === "updated" ? "QUEST UPDATE" : "QUEST COMPLETED";
+  return `${GOLD}${heading}${END}|n${entry.title}|n  - ${entry.objective}`;
 }

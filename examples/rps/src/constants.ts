@@ -9,6 +9,10 @@ export const SEATS = 2;
 export const CAMERA_PERIOD = f32(0.03);
 export const OCCLUSION_PERIOD = f32(0.1);
 export const STANCE_PERIOD = 0.5;
+/** E picks up an item on the ground this close to the hero. */
+export const PICKUP_RANGE = 200;
+/** A hero's inventory slots, as Warcraft gives every hero. */
+export const INVENTORY_SLOTS = 6;
 /** Seconds after start before the interface is rearranged. */
 export const ARRANGE_DELAY = 1.0;
 export const HUD_PERIOD = f32(0.1);
@@ -76,7 +80,9 @@ export const CAMP_RADIUS = 150;
 export const OBJECTIVE_RADIUS = 200;
 /** Warcraft's quest objective minimap icon: its interface skin key, and its file. */
 export const OBJECTIVE_ICON_SKIN_KEY = "MinimapQuestObjectivePrimary";
-export const OBJECTIVE_ICON_FILE = "UI\Minimap\MiniMap-QuestObjectivePrimary.mdl";
+export const OBJECTIVE_ICON_FILE = "UI\\Minimap\\MiniMap-QuestObjectivePrimary.mdl";
+/** The icon every quest shows in Warcraft's quest log: a scroll. */
+export const QUEST_LOG_ICON = "ReplaceableTextures\\CommandButtons\\BTNSnazzyScroll.blp";
 /** How long the minimap pings a new objective, in seconds. */
 export const OBJECTIVE_PING_SECONDS = 4;
 export const BARK_TEXT_SIZE = FLOAT_TEXT_SIZE;
@@ -86,9 +92,9 @@ export const BARK_TEXT_SIZE = FLOAT_TEXT_SIZE;
  * ConvertOsKeyType of the virtual-key code. A key event reports the same code
  * as GetHandleId of its key.
  */
-export const KEY = { escape: 0x1b, minus: 0xbd, tab: 0x09, space: 0x20, zero: 0x30, one: 0x31, two: 0x32, three: 0x33, four: 0x34, five: 0x35, six: 0x36, seven: 0x37, eight: 0x38, nine: 0x39, a: 0x41, d: 0x44, f: 0x46, l: 0x4c, q: 0x51, r: 0x52, s: 0x53, w: 0x57 } as const;
+export const KEY = { escape: 0x1b, minus: 0xbd, tab: 0x09, space: 0x20, zero: 0x30, one: 0x31, two: 0x32, three: 0x33, four: 0x34, five: 0x35, six: 0x36, seven: 0x37, eight: 0x38, nine: 0x39, a: 0x41, d: 0x44, e: 0x45, f: 0x46, i: 0x49, l: 0x4c, q: 0x51, r: 0x52, s: 0x53, w: 0x57 } as const;
 /** Registration order: an array, since Lua walks a table's keys in no fixed order. */
-export const KEY_CODES = [KEY.escape, KEY.minus, KEY.space, KEY.q, KEY.l, KEY.w, KEY.a, KEY.s, KEY.d, KEY.tab, KEY.f, KEY.one, KEY.two, KEY.three, KEY.four, KEY.five, KEY.r, KEY.six, KEY.seven, KEY.eight, KEY.nine, KEY.zero];
+export const KEY_CODES = [KEY.escape, KEY.minus, KEY.space, KEY.q, KEY.l, KEY.w, KEY.a, KEY.s, KEY.d, KEY.tab, KEY.f, KEY.e, KEY.i, KEY.one, KEY.two, KEY.three, KEY.four, KEY.five, KEY.r, KEY.six, KEY.seven, KEY.eight, KEY.nine, KEY.zero];
 /** The skill keys, by skill. */
 export const SKILL_KEY_CODES: readonly number[] = [KEY.three, KEY.four, KEY.five, KEY.r];
 /** The picker's choice keys. */

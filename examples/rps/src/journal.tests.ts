@@ -1,6 +1,6 @@
 import { assertEquals, test } from "wisp/src/runtime/testing";
 import { type Effect, type Scene, MERCENARY_SCENE, SCOUT_SCENE, TAVERN_SCENE } from "./dialogue";
-import { JOURNAL, activeQuests, journalText } from "./journal";
+import { JOURNAL, activeQuests, journalText, logChange, logMessage, questLog } from "./journal";
 import { QUEST_SCENES } from "./quests";
 
 const titles = (flags: readonly string[]) => activeQuests(new Set(flags)).map((quest) => quest.title).join(",");
@@ -48,4 +48,29 @@ test("rps journal: the text heads the list in gold and puts each objective under
     "|cffffcc00Quests|r|n|n|cffffcc00The Ogre Tax|r|nDefeat Gorm-and-Grum at the quarry.",
     "one quest",
   );
+});
+
+const logOf = (flags: readonly string[]) => questLog(new Set(flags)).map((entry) => `${entry.title}:${entry.state}`).join(",");
+
+test("rps journal: Warcraft's quest log lists each quest taken once, under way or done, and leaves out quests never taken", () => {
+  assertEquals(logOf([]), "", "nothing taken");
+  assertEquals(logOf(["provedToGormak"]), "Gor'mak's Challenge:active", "the challenge taken");
+  assertEquals(logOf(["provedToGormak", "pupsBeaten"]), "Gor'mak's Challenge:active", "on to its second stage");
+  assertEquals(questLog(new Set(["provedToGormak", "pupsBeaten"]))[0]?.objective, "Return to Gor'mak.", "the second stage's objective");
+  assertEquals(logOf(["provedToGormak", "pupsBeaten", "gormakPaid"]), "Gor'mak's Challenge:done", "done");
+  assertEquals(logOf(["gormakPaid"]), "", "hiring the trolls outright takes no quest");
+  assertEquals(logOf(["gateSettled"]), "", "ordering the captain down takes no quest");
+  assertEquals(logOf(["helpingSergeant", "knowsMines", "campAssault"]), "The Lost Patrol:done,Blood in the Timberland:active", "one done, one under way, in the journal's order");
+});
+
+test("rps journal: a quest is announced as discovered, updated and completed, once each", () => {
+  const active = { title: "The Ogre Tax", state: "active" as const, objective: "Defeat Gorm-and-Grum at the quarry." };
+  assertEquals(logChange(undefined, active), "discovered", "new");
+  assertEquals(logChange(active, active), undefined, "unchanged");
+  assertEquals(logChange(active, { ...active, objective: "Return." }), "updated", "a new stage");
+  const done = { ...active, state: "done" as const };
+  assertEquals(logChange(active, done), "completed", "done");
+  assertEquals(logChange(undefined, done), "completed", "done before the log saw it");
+  assertEquals(logChange(done, done), undefined, "announced once");
+  assertEquals(logMessage("discovered", active), "|cffffcc00QUEST DISCOVERED|r|nThe Ogre Tax|n  - Defeat Gorm-and-Grum at the quarry.", "the message");
 });

@@ -1,12 +1,16 @@
 // The RPS map's own interface, drawn with Warcraft 1.31+ frames in place of
 // the classic console: health and mana bars in the bottom-left corner, and a spell bar at the bottom center,
 // one slot per skill with its icon, key, rank and cooldown, and a learn
-// button above it while the hero can learn it. Nothing is ever selected, so
-// the slots' buttons are how the player casts and learns with the mouse.
+// button above it while the hero can learn it; what the interact key (E)
+// would do, over the spell bar; and the hero's inventory, 6 slots on a panel
+// in the bottom-right corner that its button (or I) opens and closes. Nothing
+// is ever selected, so the slots' buttons are how the player casts, learns
+// and uses items with the mouse.
 // Every client creates and fills every player's HUD the same way; the caller
 // shows each player only their own.
 import { f32 } from "wisp/src/sim/f32";
-import { type Box, LIFE_BAR, MANA_BAR, QUEST_LOG, SPELL_SLOTS, learnButton, spellSlot } from "./layout";
+import { type Box, INTERACT_HINT, INVENTORY_BUTTON, INVENTORY_PANEL, LIFE_BAR, MANA_BAR, QUEST_LOG, SPELL_SLOTS, inventorySlot, learnButton, spellSlot } from "./layout";
+import { INVENTORY_SLOTS } from "./constants";
 import { barWidth } from "./rules";
 
 /** Screen units (the 0.8 by 0.6 frame space) from thousandths. */
@@ -36,6 +40,18 @@ export interface Hud {
   readonly slots: readonly SlotFrames[];
   /** The quest journal's text, at the right under the minimap. */
   readonly quests: framehandle;
+  /** What E would do, over the spell bar. */
+  readonly hint: framehandle;
+  /** The inventory's button, its panel (which holds its slots) and each slot's icon, button and charges. */
+  readonly inventoryButton: framehandle;
+  readonly inventory: framehandle;
+  readonly items: readonly { readonly icon: framehandle; readonly button: framehandle; readonly charges: framehandle }[];
+}
+
+/** One inventory slot as the panel shows it: its item's icon, or "" when empty, and its charges, or "". */
+export interface ItemView {
+  readonly icon: string;
+  readonly charges: string;
 }
 
 /** One slot as the bar shows it. */
@@ -57,9 +73,15 @@ export interface HudView {
   readonly slots: readonly SlotView[];
   /** The quest journal (`journalText`), "" with no quest under way. */
   readonly quests: string;
+  /** What E would do (`interactHint`), "" with nothing in reach. */
+  readonly hint: string;
+  /** Whether the inventory is open, and its slots. */
+  readonly inventoryOpen: boolean;
+  readonly items: readonly ItemView[];
 }
 
-export type HudAction = { readonly kind: "cast" | "learn"; readonly slot: number };
+/** A click on the HUD: cast or learn a skill, use the item in an inventory slot, or open or close the inventory. */
+export type HudAction = { readonly kind: "cast" | "learn" | "use"; readonly slot: number } | { readonly kind: "inventory" };
 
 function backdrop(parent: framehandle, context: number, texture: string, box: Box): framehandle {
   const frame = BlzCreateFrameByType("BACKDROP", "RpsHudArt", parent, "", context);
@@ -108,11 +130,34 @@ export function createHud(context: number, clicks: trigger): Hud {
     slots.push({ icon, button: slotButton, key, rank, cooldown, learn, learnButton: button(root, context, learnBox, clicks) });
   }
   const quests = text(root, context, QUEST_LOG, TEXT_JUSTIFY_TOP, TEXT_JUSTIFY_LEFT);
-  return { root, life, lifeText, mana, slots, quests };
+  const hint = text(root, context, INTERACT_HINT, TEXT_JUSTIFY_MIDDLE, TEXT_JUSTIFY_CENTER);
+  const inventoryButton = BlzCreateFrameByType("GLUETEXTBUTTON", "RpsHudInventoryButton", root, "ScriptDialogButton", context);
+  BlzFrameSetAbsPoint(inventoryButton, FRAMEPOINT_BOTTOMLEFT, ui(INVENTORY_BUTTON.left), ui(INVENTORY_BUTTON.bottom));
+  BlzFrameSetSize(inventoryButton, ui(INVENTORY_BUTTON.width), ui(INVENTORY_BUTTON.height));
+  BlzFrameSetText(inventoryButton, "Inventory (I)");
+  BlzTriggerRegisterFrameEvent(clicks, inventoryButton, FRAMEEVENT_CONTROL_CLICK);
+  // The panel holds the slots, so hiding it hides them all.
+  const inventory = BlzCreateFrameByType("FRAME", "RpsHudInventory", root, "", context);
+  backdrop(inventory, context, BLACK, INVENTORY_PANEL);
+  const items: { readonly icon: framehandle; readonly button: framehandle; readonly charges: framehandle }[] = [];
+  for (let index = 0; index < INVENTORY_SLOTS; index++) {
+    const box = inventorySlot(index);
+    const icon = backdrop(inventory, context, BLACK, box);
+    const itemButton = button(inventory, context, box, clicks);
+    const charges = text(inventory, context, { left: box.left, bottom: box.bottom + 2, width: box.width - 3, height: 11 }, TEXT_JUSTIFY_BOTTOM, TEXT_JUSTIFY_RIGHT);
+    items.push({ icon, button: itemButton, charges });
+  }
+  BlzFrameSetVisible(inventory, false);
+  return { root, life, lifeText, mana, slots, quests, hint, inventoryButton, inventory, items };
 }
 
 /** What a clicked frame (by handle id) asks for: casting a slot's skill or learning it. */
 export function hudAction(hud: Hud, clickedId: number): HudAction | undefined {
+  if (GetHandleId(hud.inventoryButton) === clickedId) return { kind: "inventory" };
+  for (let slot = 0; slot < hud.items.length; slot++) {
+    const frames = hud.items[slot];
+    if (frames !== undefined && GetHandleId(frames.button) === clickedId) return { kind: "use", slot };
+  }
   for (let slot = 0; slot < hud.slots.length; slot++) {
     const frames = hud.slots[slot];
     if (frames === undefined) continue;
@@ -127,6 +172,14 @@ export function showHud(hud: Hud, view: HudView): void {
   BlzFrameSetText(hud.lifeText, `${view.life} / ${view.maxLife}`);
   BlzFrameSetSize(hud.mana, ui(barWidth(view.manaPercent, MANA_BAR.width)), ui(MANA_BAR.height));
   BlzFrameSetText(hud.quests, view.quests);
+  BlzFrameSetText(hud.hint, view.hint);
+  BlzFrameSetVisible(hud.inventory, view.inventoryOpen);
+  hud.items.forEach((frames, index) => {
+    const item = view.items[index];
+    if (item === undefined) return;
+    BlzFrameSetTexture(frames.icon, item.icon === "" ? BLACK : item.icon, 0, true);
+    BlzFrameSetText(frames.charges, item.charges);
+  });
   hud.slots.forEach((frames, index) => {
     const slot = view.slots[index];
     if (slot === undefined) return;

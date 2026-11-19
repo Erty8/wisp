@@ -13,7 +13,7 @@ import { UNITS } from "../src/units";
 
 const LOOKS = "the journey checks key handling and messages, not what players see";
 const ORDERS = "headless units take no orders, so nobody moves, fights or captures";
-const QUERIES = "headless has no unit or tree queries: enemies, outposts and trees are never found";
+const QUERIES = "headless has no unit, tree or item queries: enemies, outposts, trees and items on the ground are never found";
 const CAMERA = "moves only this player's camera, to their own hero";
 const alive = (life: number) => ({ life, maxLife: life, mana: 0, maxMana: 0 });
 
@@ -82,7 +82,7 @@ export const RPS_MAP = {
     IssuePointOrder: ORDERS, IssueTargetOrder: ORDERS, SetUnitOwner: ORDERS, IsPlayerEnemy: ORDERS,
     TriggerRegisterPlayerUnitEvent: "nothing fights headless, so no damage event fires",
     Filter: QUERIES, GroupEnumUnitsInRange: QUERIES, GroupEnumUnitsInRect: QUERIES, BlzGroupGetSize: QUERIES, BlzGroupUnitAt: QUERIES,
-    SetRect: QUERIES, EnumDestructablesInRect: QUERIES,
+    SetRect: QUERIES, EnumDestructablesInRect: QUERIES, EnumItemsInRect: QUERIES,
     ConvertOsKeyType: "returns the key code, which is how journey key events name keys",
     IssueImmediateOrder: "headless units take no orders, so every spell key reports it can't cast",
     GetHeroSkillPoints: "headless heroes have no skill points, so nothing is learned",
@@ -100,7 +100,7 @@ const THIRD_CHOICE = { x: 0.40625, y: 0.3125 };
 const SECOND_CHOICE = { x: 0.40625, y: 0.34765625 };
 /** Inside a scene's second choice, which spans x 0.54 to 0.79 and y 0.198 to 0.228. */
 const SCENE_SECOND_CHOICE = { x: 0.6640625, y: 0.2109375 };
-const ESCAPE = 0x1b, SPACE = 0x20, Q = 0x51, L = 0x4c, W = 0x57, A = 0x41, D = 0x44, TAB = 0x09, F = 0x46, ONE = 0x31, TWO = 0x32, THREE = 0x33, FOUR = 0x34, FIVE = 0x35, NINE = 0x39, ZERO = 0x30, MINUS = 0xbd;
+const ESCAPE = 0x1b, SPACE = 0x20, E = 0x45, I = 0x49, Q = 0x51, L = 0x4c, W = 0x57, A = 0x41, D = 0x44, TAB = 0x09, F = 0x46, ONE = 0x31, TWO = 0x32, THREE = 0x33, FOUR = 0x34, FIVE = 0x35, NINE = 0x39, ZERO = 0x30, MINUS = 0xbd;
 
 /** 60 frames a second: about 17 seconds, so every timer fires and both scenes end. */
 export const RPS_JOURNEY: Journey = {
@@ -148,6 +148,11 @@ export const RPS_JOURNEY: Journey = {
     { frame: 455, player: 1, key: Q, meta: 0, down: false },
     { frame: 460, player: 0, chat: "-anim 3" },
     { frame: 462, player: 1, chat: "-combo 4 5 6" },
+    // Player 1 presses E with nothing in reach (the quartermaster stands 400 off, past talking range);
+    // player 2 opens and closes the inventory with I.
+    { frame: 464, player: 0, key: E, meta: 0 },
+    { frame: 465, player: 1, key: I, meta: 0 },
+    { frame: 467, player: 1, key: I, meta: 0 },
     // Both talk to their quartermaster: player 1 hires Footmen (key 1) and leaves (key 3); player 2 hires
     // Riflemen with a click, tries them again, and leaves.
     { frame: 470, player: 0, chat: "-scene" },
