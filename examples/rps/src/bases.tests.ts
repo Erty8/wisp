@@ -1,5 +1,5 @@
 import { assertEquals, test } from "wisp/src/runtime/testing";
-import { BASES, CHATTER_BEATS, chatterOn, sparrerOnBeat, BASE_MELEE_COST, baseOfRace, baseSpawn, baseSpot, nearestTavern, tavernSpawn, BASE_QUEST_GOLD, BASE_RANGED_COST, VETERAN_MELEE_COST, VETERAN_RANGED_COST, baseQuestScene, baseScene, questFlag, raceFlag, veteransFlag } from "./bases";
+import { BASES, baseShopScene, CHATTER_BEATS, chatterOn, sparrerOnBeat, BASE_MELEE_COST, baseOfRace, baseSpawn, baseSpot, nearestTavern, tavernSpawn, BASE_QUEST_GOLD, BASE_RANGED_COST, VETERAN_MELEE_COST, VETERAN_RANGED_COST, baseQuestScene, baseScene, questFlag, raceFlag, veteransFlag } from "./bases";
 import { choiceStates, openingOf, sceneProblems } from "./dialogue";
 import { activeQuests } from "./journal";
 import { QUEST_SITES } from "./quests";
@@ -128,4 +128,26 @@ test("rps bases: someone at each base calls out every 8 s, the bases staggered, 
 
 test("rps bases: the sparring pair swing in turn, a second apart", () => {
   assertEquals([0, 1, 2, 3, 4, 5, 6, 7].map((beat) => sparrerOnBeat(beat) ?? "-").join(""), "0-1-0-1-", "turns");
+});
+
+test("rps bases: each base's shopkeeper sells three wares to anyone, each for its price, greyed out without the gold", () => {
+  for (const base of BASES) {
+    const scene = base.shopScene;
+    assertEquals(sceneProblems(scene).join("; "), "", scene.name);
+    let sold = 0;
+    for (const node of scene.nodes) {
+      for (const effect of node.effects ?? []) {
+        if (effect.kind !== "item") continue;
+        sold++;
+        assertEquals(effect.code.length === 4 && effect.cost > 0, true, `${scene.name}: ${effect.name}`);
+      }
+    }
+    assertEquals(sold, 3, `${scene.name}: three wares`);
+    assertEquals(base.shop.side === -base.giver.side, true, `${scene.name}: at the recruiter's other side`);
+  }
+  const human = baseShopScene(0);
+  const wares = human.nodes.find((node) => node.id === "wares")?.choices ?? [];
+  assertEquals(wares.map((choice) => choice.text).join(" | "), "A Potion of Healing (150 gold). | A Ring of Protection +2 (150 gold). | Claws of Attack +6 (300 gold). | Not now.", "the Human shop");
+  assertEquals(choiceStates(wares, new Set(), 150).join(","), "open,open,greyed,open", "150 gold: not the claws");
+  assertEquals(openingOf(human, new Set(), 0), "wares", "anyone, kin or not");
 });

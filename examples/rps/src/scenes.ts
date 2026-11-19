@@ -24,7 +24,7 @@ import { BARK_TEXT_SIZE, CAMERA_PERIOD, NEWS_MODEL, QUEST_ICON_FILE, QUEST_ICON_
 import { enlist, raiseFight, releaseScene, turn } from "./questRuntime";
 import {
   type Npc, type SceneRun, type SceneSeat,
-  alive, flagsOf, goldOf, host, isLocal, now, pointOf, say, sceneSeatOf, scenes, shove, unitsInRange,
+  alive, flagsOf, goldOf, host, isLocal, now, pointOf, rawcode, say, sceneSeatOf, scenes, shove, unitsInRange,
 } from "./sceneHost";
 
 /**
@@ -405,9 +405,24 @@ function applyEffect(seat: SceneSeat, run: SceneRun, effect: Effect): void {
     SetWidgetLife(seat.hero, BlzGetUnitMaxHP(seat.hero));
     SetUnitState(seat.hero, UNIT_STATE_MANA, BlzGetUnitMaxMana(seat.hero));
     say(seat, `${run.npcName} heals you.`);
-  } else if (effect.kind === "ally") enlist(run, effect);
+  } else if (effect.kind === "item") buyItem(seat, effect);
+  else if (effect.kind === "ally") enlist(run, effect);
   else if (effect.kind === "hostile") turn(seat, run, effect);
   else raiseFight(seat, run, effect);
+}
+
+/**
+ * An `item` effect: the hero pays and the item goes into his inventory (a
+ * power-up is used at once); with the inventory full it lies at his feet.
+ * Without the gold, nothing changes hands.
+ */
+function buyItem(seat: SceneSeat, effect: Extract<Effect, { kind: "item" }>): void {
+  const gold = goldOf(seat);
+  if (gold < effect.cost) return say(seat, `Not enough gold: ${effect.name} costs ${effect.cost}.`);
+  SetPlayerState(seat.player, PLAYER_STATE_RESOURCE_GOLD, gold - effect.cost);
+  const at = pointOf(seat.hero);
+  const item = CreateItem(rawcode(effect.code), at.x, at.y);
+  say(seat, UnitAddItem(seat.hero, item) ? `You buy ${effect.name}.` : `Your inventory is full: ${effect.name} lies at your feet.`);
 }
 
 /**

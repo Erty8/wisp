@@ -59,6 +59,16 @@ export interface Base {
   readonly questScene: Scene;
   /** What keeps the base alive: workers walking their rounds, guards on patrol, a sparring pair and the chatter its people call out. */
   readonly life: BaseLife;
+  /** The shopkeeper at the recruiter's other side, and his scene. */
+  readonly shop: BasePart;
+  readonly shopScene: Scene;
+}
+
+/** An item a base's shop sells: its four-letter rawcode, its name and its price. */
+export interface Ware {
+  readonly code: string;
+  readonly name: string;
+  readonly cost: number;
 }
 
 /** A unit walking back and forth between where it stands and `to` (Warcraft's patrol order). */
@@ -100,10 +110,16 @@ export function sparrerOnBeat(beat: number): 0 | 1 | undefined {
 const LOOKS: readonly {
   readonly hall: string; readonly barracks: string; readonly house: string; readonly worker: string;
   readonly npcName: string; readonly greeting: string; readonly chatter: readonly string[]; readonly quest: BaseQuest;
+  /** The shopkeeper's name and unit type, and his three wares. */
+  readonly shop: { readonly keeper: string; readonly code: string; readonly wares: readonly [Ware, Ware, Ware] };
 }[] = [
   {
     hall: "htow", barracks: "hbar", house: "hhou", worker: "hpea", npcName: "Marshal Aldren", greeting: "For the Alliance",
     chatter: ["Keep those blades sharp!", "Another wagon from Lordaeron, late again.", "Ready for duty!", "The Marshal wants the walls checked twice."],
+    shop: {
+      keeper: "Merchant Tomas", code: "hpea",
+      wares: [{ code: "phea", name: "a Potion of Healing", cost: 150 }, { code: "rde1", name: "a Ring of Protection +2", cost: 150 }, { code: "rat6", name: "Claws of Attack +6", cost: 300 }],
+    },
     quest: {
       title: "Bandits on the King's Road", giver: "Lieutenant Mira", foes: "bandits",
       ask: "Bandits hold the old camp on the King's Road and rob every wagon we send. Break them, and the Marshal opens the armory to you.",
@@ -114,6 +130,10 @@ const LOOKS: readonly {
   {
     hall: "ogre", barracks: "obar", house: "otrb", worker: "opeo", npcName: "Blood Captain Gorth", greeting: "For the Horde",
     chatter: ["Work, peons, work!", "Zug zug.", "The kodo are restless tonight.", "Blood and thunder!"],
+    shop: {
+      keeper: "Trader Grok", code: "opeo",
+      wares: [{ code: "phea", name: "a Potion of Healing", cost: 150 }, { code: "bspd", name: "Boots of Speed", cost: 250 }, { code: "ofir", name: "an Orb of Fire", cost: 350 }],
+    },
     quest: {
       title: "Wolves at the Pens", giver: "Scout Rokhan", foes: "wolves",
       ask: "A wolf pack dens past the ridge and takes our kodo calves. Kill the pack leader, and Gorth will give you his best.",
@@ -124,6 +144,10 @@ const LOOKS: readonly {
   {
     hall: "etol", barracks: "eaom", house: "emow", worker: "ewsp", npcName: "Sentinel Ilara", greeting: "Elune guide you",
     chatter: ["The forest whispers of strangers.", "Elune watches over us.", "Keep your arrows ready.", "The moonwell runs clear today."],
+    shop: {
+      keeper: "Faelin the Dryad", code: "edry",
+      wares: [{ code: "pman", name: "a Potion of Mana", cost: 150 }, { code: "gcel", name: "Gloves of Haste", cost: 300 }, { code: "prvt", name: "a Periapt of Vitality", cost: 350 }],
+    },
     quest: {
       title: "Murlocs at the Moonwell", giver: "Warden Thalyss", foes: "murlocs",
       ask: "Murlocs foul the moonwell shore. Drive them back into the water, and Ilara will trust you with her finest.",
@@ -134,6 +158,10 @@ const LOOKS: readonly {
   {
     hall: "unpl", barracks: "usep", house: "uzig", worker: "uaco", npcName: "Deathlord Varkus", greeting: "The Scourge endures",
     chatter: ["The Scourge never sleeps.", "Our master's will be done.", "Fresh corpses for the Necropolis.", "Bow before the Lich King."],
+    shop: {
+      keeper: "Acolyte Varn", code: "uaco",
+      wares: [{ code: "pman", name: "a Potion of Mana", cost: 150 }, { code: "rnec", name: "a Rod of Necromancy", cost: 200 }, { code: "odef", name: "an Orb of Darkness", cost: 350 }],
+    },
     quest: {
       title: "Kobold Tunnels", giver: "Acolyte Mordis", foes: "kobolds",
       ask: "Kobolds tunnel under our blight and gnaw at the crypts. Collapse their tunnels, and Varkus will raise his abominations for you.",
@@ -267,6 +295,35 @@ export function baseQuestScene(raceIndex: number): Scene {
   };
 }
 
+/**
+ * A base's shop scene: the shopkeeper sells his three wares to anyone, each
+ * greyed out without the gold, and asks again after a sale, until the hero
+ * says not now.
+ */
+export function baseShopScene(raceIndex: number): Scene {
+  const race = raceAt(raceIndex), look = lookAt(raceIndex);
+  const { shop } = look;
+  const wares: Choice[] = [
+    ...shop.wares.map((ware, index) => ({ text: `${ware.name.charAt(0).toUpperCase()}${ware.name.slice(1)} (${ware.cost} gold).`, next: `buy${index}`, when: [{ gold: ware.cost }] })),
+    { text: "Not now.", next: "later" },
+  ];
+  return {
+    name: `${race.name} Shop`,
+    npcName: shop.keeper,
+    npcCode: shop.code,
+    start: "wares",
+    bark: { text: "Potions and steel, {hero}! Come and look.", mood: "question" },
+    nodes: [
+      { id: "wares", speaker: "npc", mood: "neutral", text: "Take a look, {hero}. Coin up front.", choices: wares },
+      { id: "more", speaker: "npc", mood: "question", text: "Anything else?", choices: wares },
+      ...shop.wares.map((ware, index): DialogueNode => ({
+        id: `buy${index}`, speaker: "npc", mood: "confirm", text: "A fine choice.", effects: [{ kind: "item", code: ware.code, name: ware.name, cost: ware.cost }], next: "more",
+      })),
+      { id: "later", speaker: "hero", mood: "neutral", text: "Not now." },
+    ],
+  };
+}
+
 /** A base's hall behind its recruiter, its barracks beside the hall, two melee and two ranged guards in front, and its quest giver at his side. */
 function baseOf(raceIndex: number, angle: number): Base {
   const race = raceAt(raceIndex), look = lookAt(raceIndex);
@@ -285,6 +342,8 @@ function baseOf(raceIndex: number, angle: number): Base {
     ],
     scene: baseScene(raceIndex),
     giver: { code: ranged, out: 50, side: -420 },
+    shop: { code: look.shop.code, out: 50, side: 420 },
+    shopScene: baseShopScene(raceIndex),
     quest: look.quest,
     questScene: baseQuestScene(raceIndex),
     life: {

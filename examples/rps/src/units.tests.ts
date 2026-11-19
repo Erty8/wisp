@@ -29,7 +29,7 @@ function usedCodes(): string[] {
   for (const wanderer of WANDERERS) codes.push(...sceneCodes(wanderer.scene));
   codes.push(...sceneCodes(SELLSWORD_SCENE), ...SELLSWORDS.map((sellsword) => sellsword.code));
   for (const base of BASES) {
-    codes.push(...sceneCodes(base.scene), ...sceneCodes(base.questScene));
+    codes.push(...sceneCodes(base.scene), ...sceneCodes(base.questScene), ...sceneCodes(base.shopScene));
     for (const part of [...base.buildings, ...base.guards, ...base.life.workers, ...base.life.patrols, ...base.life.sparring]) codes.push(part.code);
   }
   for (const site of QUEST_SITES) {

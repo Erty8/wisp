@@ -1377,8 +1377,8 @@ function placeQuestSites(center: Point): void {
  * hall and barracks behind its recruiter and its guards in front, all
  * neutral, unhurtable and put where Warcraft's pathing lets them stand. The
  * recruiter faces the center and plays the base's scene; the guards stand with
- * him (his company) and face out; the quest giver stands at his side and
- * plays the base's quest.
+ * him (his company) and face out; the quest giver stands at one side of him
+ * and plays the base's quest, the shopkeeper at the other and sells its wares.
  */
 function placeBases(center: Point): void {
   const rps = state();
@@ -1430,6 +1430,14 @@ function placeBases(center: Point): void {
     BlzSetUnitName(questNpc, questScene.npcName);
     SetUnitInvulnerable(questNpc, true);
     rps.npcs.push({ unit: questNpc, scene: questScene, name: questScene.npcName, code: questScene.npcCode, extras: [] });
+    // The shopkeeper at the recruiter's other side, facing the center.
+    const { shopScene } = base;
+    const shopAt = at(base.shop);
+    const shopNpc = CreateUnit(Player(PLAYER_NEUTRAL_PASSIVE), rawcode(shopScene.npcCode), shopAt.x, shopAt.y, (base.angle + 1800) / 10);
+    shove(shopNpc, shopAt);
+    BlzSetUnitName(shopNpc, shopScene.npcName);
+    SetUnitInvulnerable(shopNpc, true);
+    rps.npcs.push({ unit: shopNpc, scene: shopScene, name: shopScene.npcName, code: shopScene.npcCode, extras: [] });
   }
 }
 

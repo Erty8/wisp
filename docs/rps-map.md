@@ -924,6 +924,24 @@ that type, so a free base doesn't fill the map with soldiers, but a veteran
 pair can join beside a basic one of the same role. Units the map creates
 ignore Warcraft's food cap, so veterans can take a party past it.
 
+**Base shops** (`baseShopScene`): a shopkeeper stands at the recruiter's
+other side, mirroring the quest giver, and sells three wares to anyone,
+kin or not, each greyed out without the gold. A sale is an `item` effect
+(`buyItem` in src/scenes.ts): the hero pays, and the item goes into his
+inventory (a power-up is used at once) or, with the inventory full, lies at
+his feet. Without the gold nothing changes hands.
+
+| Base | Shopkeeper | Wares |
+| --- | --- | --- |
+| Human | Merchant Tomas (a Peasant) | Potion of Healing (150), Ring of Protection +2 (150), Claws of Attack +6 (300) |
+| Orc | Trader Grok (a Peon) | Potion of Healing (150), Boots of Speed (250), Orb of Fire (350) |
+| Night Elf | Faelin the Dryad | Potion of Mana (150), Gloves of Haste (300), Periapt of Vitality (350) |
+| Undead | Acolyte Varn | Potion of Mana (150), Rod of Necromancy (200), Orb of Darkness (350) |
+
+The items' rawcodes (`phea`, `rde1`, `rat6`, `bspd`, `ofir`, `pman`, `gcel`,
+`prvt`, `rnec`, `odef`) are untested in Warcraft yet: a wrong one creates no
+item.
+
 **Base life** (`BaseLife`, `placeBases`, `baseLifeTick`): besides its hall
 and barracks each base has two houses (Farms, Orc Burrows, Moon Wells,
 Ziggurats), and its people go about their day:

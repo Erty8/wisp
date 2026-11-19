@@ -76,7 +76,9 @@ export type Effect =
    * then he goes back to his post. He can't be hurt meanwhile.
    */
   | { readonly kind: "ally"; readonly code?: string; readonly tag: string }
-  | { readonly kind: "heal" };
+  | { readonly kind: "heal" }
+  /** An item bought for a cost (`code`, its four-letter rawcode; `name`, what the messages call it): into the hero's inventory, or at his feet if it is full. */
+  | { readonly kind: "item"; readonly code: string; readonly name: string; readonly cost: number };
 
 export interface Choice {
   readonly text: string;
